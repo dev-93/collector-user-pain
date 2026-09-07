@@ -1,0 +1,34 @@
+{
+  "name": "problem-radar",
+  "version": "0.1.0",
+  "description": "한국 사용자 문제 자동 수집·분석 시스템 — 반복되는 불평에서 사업 기회를 찾는다",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "collect": "node src/index.js --collect",
+    "collect:naver": "node src/collectors/naver-kin.js",
+    "collect:apps": "node src/collectors/app-reviews.js",
+    "analyze": "node src/index.js --analyze",
+    "top": "node src/index.js --top",
+    "bot": "node src/services/telegram-bot.js",
+    "setup:notion": "node scripts/setup-notion.js",
+    "dev": "node --env-file=.env src/index.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@notionhq/client": "^2.2.15",
+    "axios": "^1.7.9",
+    "cheerio": "^1.1.2",
+    "dotenv": "^16.4.7",
+    "google-play-scraper": "^9.1.1",
+    "app-store-scraper": "^0.18.0",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "author": "Taenami",
+  "license": "MIT"
+}
