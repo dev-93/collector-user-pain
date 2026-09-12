@@ -10,7 +10,10 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { COMPLAINT_SIGNALS, COLLECT_CONFIG } from '../config/index.js';
 
-const BASE_URL = 'https://openapi.naver.com/v1/search';
+// 2026년 6월 이후 NAVER API HUB로 이관됨
+// 구 endpoint: https://openapi.naver.com/v1/search/{type}
+// 신 endpoint: https://naverapihub.apigw.ntruss.com/search/v1/{type}
+const BASE_URL = 'https://naverapihub.apigw.ntruss.com/search/v1';
 
 // 불평 시그널 문장이 포함되었는지 확인
 function hasComplaintSignal(text) {
@@ -45,28 +48,21 @@ class NaverCollector {
 
   get headers() {
     if (!this.clientId) return {};
-    // NAVER API HUB / ncloud 키 지원 (X-NCP-APIGW-API-KEY-ID 또는 X-Naver-Client-Id)
     return {
-      'X-Naver-Client-Id': this.clientId,
-      'X-Naver-Client-Secret': this.clientSecret,
       'X-NCP-APIGW-API-KEY-ID': this.clientId,
       'X-NCP-APIGW-API-KEY': this.clientSecret,
     };
   }
 
   /**
-   * 네이버 API 검색 (실패 시 Google News RSS fallback)
+   * NAVER API HUB 검색
    */
   async search(type, query, display = 10) {
     if (!this.clientId) return [];
     try {
       const { data } = await axios.get(`${BASE_URL}/${type}`, {
         headers: this.headers,
-        params: {
-          query,
-          display,
-          sort: 'date',
-        },
+        params: { query, display, sort: 'date' },
       });
       return data.items || [];
     } catch (err) {
@@ -88,11 +84,17 @@ class NaverCollector {
       const $ = cheerio.load(res.data, { xmlMode: true });
       const results = [];
 
+      // 쿼리 자체에서 신호 추출 (본문 없는 뉴스 제목 보정용)
+      const querySignals = COMPLAINT_SIGNALS.filter((s) => query.includes(s));
+
       $('item').each((i, el) => {
         const title = stripHtml($(el).find('title').text());
         const link = $(el).find('link').text();
         const pubDate = $(el).find('pubDate').text();
         const fullText = title;
+
+        const textSignals = extractSignals(fullText);
+        const allSignals = [...new Set([...textSignals, ...querySignals])];
 
         results.push({
           source: '구글 뉴스 (웹 수집)',
@@ -101,7 +103,7 @@ class NaverCollector {
           raw_title: title,
           raw_description: title,
           query,
-          signals: extractSignals(fullText),
+          signals: allSignals,
           collected_at: new Date(pubDate || Date.now()).toISOString(),
         });
       });
@@ -121,7 +123,12 @@ class NaverCollector {
       const description = stripHtml(item.description);
       const fullText = `${title} ${description}`;
 
-      if (!hasComplaintSignal(fullText)) continue;
+      // 신호가 없어도 검색 쿼리 자체가 불평 키워드이므로 일단 수집
+      // pre-filter 단계에서 품질 판단
+      const signals = extractSignals(fullText);
+      // 쿼리 키워드도 신호로 추가 (중복 제거)
+      const querySignals = COMPLAINT_SIGNALS.filter((s) => query.includes(s));
+      const allSignals = [...new Set([...signals, ...querySignals])];
 
       results.push({
         source: '네이버 지식iN',
@@ -130,7 +137,7 @@ class NaverCollector {
         raw_title: title,
         raw_description: description,
         query,
-        signals: extractSignals(fullText),
+        signals: allSignals,
         collected_at: new Date().toISOString(),
       });
     }
@@ -146,7 +153,9 @@ class NaverCollector {
       const description = stripHtml(item.description);
       const fullText = `${title} ${description}`;
 
-      if (!hasComplaintSignal(fullText)) continue;
+      const signals = extractSignals(fullText);
+      const querySignals = COMPLAINT_SIGNALS.filter((s) => query.includes(s));
+      const allSignals = [...new Set([...signals, ...querySignals])];
 
       results.push({
         source: '네이버 블로그',
@@ -155,7 +164,7 @@ class NaverCollector {
         raw_title: title,
         raw_description: description,
         query,
-        signals: extractSignals(fullText),
+        signals: allSignals,
         collected_at: new Date().toISOString(),
       });
     }

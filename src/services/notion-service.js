@@ -35,85 +35,26 @@ class NotionService {
     }
 
     const props = {
-      problem_summary: {
+      '문제': {
         title: [{ text: { content: problem.problem_summary || '(요약 없음)' } }],
       },
     };
 
-    // 텍스트 필드
-    if (problem.original_text) {
-      props.original_text = {
-        rich_text: [{ text: { content: problem.original_text.slice(0, 2000) } }],
-      };
-    }
-    if (problem.target_user) {
-      props.target_user = {
-        rich_text: [{ text: { content: problem.target_user } }],
-      };
-    }
-    if (problem.context) {
-      props.context = {
-        rich_text: [{ text: { content: problem.context } }],
-      };
-    }
-    if (problem.current_solution) {
-      props.current_solution = {
-        rich_text: [{ text: { content: problem.current_solution } }],
-      };
-    }
-    if (problem.solution_gap) {
-      props.solution_gap = {
-        rich_text: [{ text: { content: problem.solution_gap } }],
-      };
-    }
-    if (problem.competitors) {
-      props.competitors = {
-        rich_text: [{ text: { content: problem.competitors } }],
-      };
-    }
+    if (problem.score != null)
+      props['점수'] = { number: Number(problem.score) };
+    if (problem.problem_category)
+      props['카테고리'] = { select: { name: problem.problem_category } };
+    if (problem.target_user)
+      props['대상'] = { rich_text: [{ text: { content: problem.target_user } }] };
+    if (problem.source)
+      props['출처'] = { select: { name: problem.source } };
+    if (problem.source_url)
+      props['원문링크'] = { url: problem.source_url };
+    if (problem.status)
+      props['상태'] = { select: { name: problem.status } };
 
-    // URL
-    if (problem.source_url) {
-      props.source_url = { url: problem.source_url };
-    }
-
-    // Select 필드
-    if (problem.source) {
-      props.source = { select: { name: problem.source } };
-    }
-    if (problem.problem_category) {
-      props.problem_category = { select: { name: problem.problem_category } };
-    }
-    if (problem.status) {
-      props.status = { select: { name: problem.status } };
-    }
-
-    // 숫자 필드
-    const numberFields = [
-      'frequency', 'pain', 'willingness_to_pay',
-      'market_size', 'competition_gap', 'my_fit',
-      'development_difficulty', 'score',
-    ];
-    for (const field of numberFields) {
-      if (problem[field] != null) {
-        props[field] = { number: Number(problem[field]) };
-      }
-    }
-
-    // 체크박스
-    if (problem.is_estimated != null) {
-      props.is_estimated = { checkbox: Boolean(problem.is_estimated) };
-    }
-
-    // 날짜
     const date = problem.collected_at || new Date().toISOString();
-    props.collected_at = { date: { start: date.split('T')[0] } };
-
-    // 메모 (MVP 아이디어 또는 기각 사유)
-    const memo = problem.mvp_idea || problem.skip_reason || '';
-    if (memo) {
-      props.memo = { rich_text: [{ text: { content: memo.slice(0, 2000) } }] };
-    }
+    props['수집일'] = { date: { start: date.split('T')[0] } };
 
     const page = await this.client.pages.create({
       parent: { database_id: this.problemDbId },
@@ -169,10 +110,7 @@ class NotionService {
     try {
       const response = await this.client.databases.query({
         database_id: this.problemDbId,
-        filter: {
-          property: 'source_url',
-          url: { equals: url },
-        },
+        filter: { property: '원문링크', url: { equals: url } },
         page_size: 1,
       });
       return response.results[0] || null;
@@ -181,58 +119,39 @@ class NotionService {
     }
   }
 
-  /**
-   * TOP N 문제 조회 (점수 내림차순)
-   * @param {number} limit
-   * @param {string} status - 특정 상태만 조회 (null이면 전체)
-   */
   async getTopProblems(limit = 10, status = null) {
     const filter = status
-      ? { property: 'status', select: { equals: status } }
+      ? { property: '상태', select: { equals: status } }
       : undefined;
 
     const response = await this.client.databases.query({
       database_id: this.problemDbId,
       filter,
-      sorts: [{ property: 'score', direction: 'descending' }],
+      sorts: [{ property: '점수', direction: 'descending' }],
       page_size: limit,
     });
 
     return response.results.map(extractProblemFromPage);
   }
 
-  /**
-   * 오늘 수집된 문제 조회
-   */
   async getTodayProblems() {
     const today = new Date().toISOString().split('T')[0];
-
     const response = await this.client.databases.query({
       database_id: this.problemDbId,
-      filter: {
-        property: 'collected_at',
-        date: { equals: today },
-      },
-      sorts: [{ property: 'score', direction: 'descending' }],
+      filter: { property: '수집일', date: { equals: today } },
+      sorts: [{ property: '점수', direction: 'descending' }],
     });
-
     return response.results.map(extractProblemFromPage);
   }
 
-  /**
-   * 문제 상태 업데이트 (검증 중 → 검증완료 등)
-   */
   async updateStatus(pageId, status) {
     await this.client.pages.update({
       page_id: pageId,
-      properties: {
-        status: { select: { name: status } },
-      },
+      properties: { '상태': { select: { name: status } } },
     });
   }
 }
 
-// Notion 페이지에서 Problem 구조체 추출
 function extractProblemFromPage(page) {
   const props = page.properties;
   const get = (name, type) => {
@@ -251,20 +170,14 @@ function extractProblemFromPage(page) {
   return {
     id: page.id,
     notion_url: page.url,
-    problem_summary: get('problem_summary', 'title'),
-    source: get('source', 'select'),
-    source_url: get('source_url', 'url'),
-    target_user: get('target_user', 'rich_text'),
-    problem_category: get('problem_category', 'select'),
-    frequency: get('frequency', 'number'),
-    pain: get('pain', 'number'),
-    willingness_to_pay: get('willingness_to_pay', 'number'),
-    my_fit: get('my_fit', 'number'),
-    score: get('score', 'number'),
-    status: get('status', 'select'),
-    is_estimated: get('is_estimated', 'checkbox'),
-    collected_at: get('collected_at', 'date'),
-    mvp_idea: get('memo', 'rich_text'),
+    problem_summary: get('문제', 'title'),
+    source: get('출처', 'select'),
+    source_url: get('원문링크', 'url'),
+    target_user: get('대상', 'rich_text'),
+    problem_category: get('카테고리', 'select'),
+    score: get('점수', 'number'),
+    status: get('상태', 'select'),
+    collected_at: get('수집일', 'date'),
   };
 }
 

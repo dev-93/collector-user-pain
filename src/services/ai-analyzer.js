@@ -19,9 +19,9 @@ const BATCH_SIZE = 10;
 // Gemini 모델 (변경 금지)
 const GEMINI_MODEL = 'gemini-3.6-flash';
 
-// OpenRouter 기본 모델 — 무료 + 한국어 품질 우수
+// OpenRouter 기본 모델 — 무료 + 한국어 품질 우수 (Google Gemma 계열)
 // 환경변수 OPENROUTER_MODEL 로 재정의 가능
-const OPENROUTER_DEFAULT_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
+const OPENROUTER_DEFAULT_MODEL = 'google/gemma-4-26b-a4b-it:free';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 class AIAnalyzer {

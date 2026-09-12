@@ -57,7 +57,7 @@ async function runCollect() {
   // 2. 사전 필터 (규칙 기반, 0 토큰)
   console.log('=== STEP 2: 사전 필터 (토큰 절감) ===');
   const candidates = preFilter(rawCandidates, {
-    minPreScore: 40,
+    minPreScore: 20,  // 완화 — 쿼리 신호 보정으로 최소 20점은 확보됨
     maxCount: 30,  // AI_LIMIT(15) × 2 버퍼 — 배치 2회 호출로 처리
     verbose: true,
   });
@@ -96,11 +96,9 @@ async function runCollect() {
     console.log(`점수 ${minScore}+ 문제가 없었습니다.`);
   } else {
     top10.forEach((p, i) => {
-      const estimated = p.is_estimated ? ' (추정)' : '';
-      console.log(`${i + 1}. [${p.score}점${estimated}] ${p.problem_summary}`);
-      console.log(`   대상: ${p.target_user} | 카테고리: ${p.problem_category}`);
-      console.log(`   빈도:${p.frequency} 고통:${p.pain} 지불의사:${p.willingness_to_pay} 내적합도:${p.my_fit}`);
-      if (p.mvp_idea) console.log(`   💡 ${p.mvp_idea}`);
+      console.log(`${i + 1}. [${p.score}점] ${p.problem_summary}`);
+      console.log(`   대상: ${p.target_user || '미분석'} | 카테고리: ${p.problem_category || '기타'}`);
+      console.log(`   출처: ${p.source || '-'} | 상태: ${p.status || '-'}`);
       console.log();
     });
   }
@@ -120,9 +118,8 @@ async function runTop() {
   }
 
   problems.forEach((p, i) => {
-    const estimated = p.is_estimated ? ' (추정)' : '';
-    console.log(`${i + 1}. [${p.score}점${estimated}] ${p.problem_summary}`);
-    console.log(`   ${p.source} | ${p.problem_category} | 상태: ${p.status}`);
+    console.log(`${i + 1}. [${p.score}점] ${p.problem_summary}`);
+    console.log(`   ${p.source || '-'} | ${p.problem_category || '기타'} | 상태: ${p.status || '-'}`);
     console.log(`   URL: ${p.notion_url}`);
     console.log();
   });
