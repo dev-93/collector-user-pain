@@ -84,8 +84,8 @@ class AIAnalyzer {
 
     if (!response.ok) {
       const errText = await response.text();
-      // 한도 초과 감지
-      if (response.status === 429 || errText.includes('quota') || errText.includes('rate limit')) {
+      // 한도 초과 감지 (429만 정확하게 판단)
+      if (response.status === 429) {
         throw new QuotaExceededError(`OpenRouter 한도 초과: ${errText}`);
       }
       throw new Error(`OpenRouter API 오류 ${response.status}: ${errText}`);
@@ -122,10 +122,7 @@ class AIAnalyzer {
       };
     } catch (err) {
       if (err instanceof QuotaExceededError) throw err;
-      const isQuotaExceeded =
-        err.message?.includes('429') ||
-        err.message?.includes('Quota exceeded') ||
-        err.message?.includes('quota');
+      const isQuotaExceeded = err.message?.includes('429');
       if (isQuotaExceeded) throw new QuotaExceededError(err.message);
       console.error('❌ AI 분석 오류:', err.message);
       return null;
@@ -163,10 +160,7 @@ class AIAnalyzer {
       });
     } catch (err) {
       if (err instanceof QuotaExceededError) throw err;
-      const isQuotaExceeded =
-        err.message?.includes('429') ||
-        err.message?.includes('Quota exceeded') ||
-        err.message?.includes('quota');
+      const isQuotaExceeded = err.message?.includes('429');
       if (isQuotaExceeded) throw new QuotaExceededError(err.message);
       console.error('❌ 배치 분석 오류:', err.message);
       return null;
