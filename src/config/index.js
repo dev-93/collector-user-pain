@@ -58,7 +58,7 @@ export const SCORE_WEIGHTS = {
   my_fit: 0.15,         // 내 해결 능력
 };
 
-// 무기 정의 (AI 적합도 판단용 — 특정 도메인 편향 없이 범용적 문제 해결력 중심)
+// 나의 역량 정의 (AI 적합도 판단용 — 특정 도메인 편향 없이 범용적 문제 해결력 중심)
 export const MY_WEAPONS = {
   skills: [
     '웹/모바일 서비스 구축', 'API 연동 및 크롤링', 'AI 기반 자동화 및 문제 분석',
@@ -74,7 +74,6 @@ export const MY_WEAPONS = {
     '빠른 실행력 및 즉각적 개발 투입 가능',
     'AI를 활용한 고속 개발',
   ],
-  todo: [],
 };
 
 // 수집 설정

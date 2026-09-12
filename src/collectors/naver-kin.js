@@ -15,12 +15,6 @@ import { COMPLAINT_SIGNALS, COLLECT_CONFIG } from '../config/index.js';
 // 신 endpoint: https://naverapihub.apigw.ntruss.com/search/v1/{type}
 const BASE_URL = 'https://naverapihub.apigw.ntruss.com/search/v1';
 
-// 불평 시그널 문장이 포함되었는지 확인
-function hasComplaintSignal(text) {
-  if (!text) return false;
-  return COMPLAINT_SIGNALS.some((signal) => text.includes(signal));
-}
-
 // HTML 태그와 엔티티 제거
 function stripHtml(text) {
   if (!text) return '';

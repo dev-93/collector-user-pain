@@ -15,11 +15,6 @@ import gplay from 'google-play-scraper';
 import appStore from 'app-store-scraper';
 import { COMPLAINT_SIGNALS, COLLECT_CONFIG } from '../config/index.js';
 
-function hasComplaintSignal(text) {
-  if (!text) return false;
-  return COMPLAINT_SIGNALS.some((signal) => text.includes(signal));
-}
-
 function extractSignals(text) {
   return COMPLAINT_SIGNALS.filter((s) => text && s && text.includes(s));
 }

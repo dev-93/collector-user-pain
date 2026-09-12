@@ -1,10 +1,10 @@
 /**
  * analyze.js
- * Gemini AI에 전달할 문제 분석 프롬프트
+ * AI에 전달할 문제 분석 프롬프트
  *
  * 분석 기준:
  *   - 단순 불만 vs 실제 사업 기회 구분
- *   - 태남의 무기와 문제의 fit 판단
+ *   - 나의 역량과 문제의 fit 판단
  *   - 점수가 약하면 솔직하게 낮게, 근거 없으면 "추정" 표시
  */
 
@@ -41,7 +41,7 @@ export const SYSTEM_PROMPT = `
 문제가 약하면 낮은 점수를 준다.
 근거가 부족하면 is_estimated: true 로 표시한다.
 
-분석 대상자(태남)의 무기:
+분석 의뢰인의 역량:
 ${weaponSummary}
 `.trim();
 
@@ -73,7 +73,7 @@ ${candidate.signals?.length ? `\n감지된 불평 신호: ${candidate.signals.jo
   "willingness_to_pay": 1~10 (돈을 낼 가능성),
   "market_size": 1~10 (시장 크기),
   "competition_gap": 1~10 (경쟁이 해결 못 한 기회),
-  "my_fit": 1~10 (태남이 가진 무기로 해결 가능한가),
+  "my_fit": 1~10 (의뢰인의 역량으로 해결 가능한가),
   "development_difficulty": 1~10 (개발 난이도, 낮을수록 쉬움),
   "score": 0~100 (종합 점수: 빈도×20% + 고통×20% + 지불의사×20% + 시장성×15% + 경쟁기회×10% + 내적합도×15% - 개발난이도×10%),
 
@@ -85,7 +85,7 @@ ${candidate.signals?.length ? `\n감지된 불평 신호: ${candidate.signals.jo
 규칙:
 - 단순 버그 불만(로그인 안 됨, 오류 발생)은 score 30 이하
 - 구조적 문제(기능 부재, 반복 수작업)는 가중치 높게
-- my_fit은 태남의 무기와 직접 연결해서 판단
+- my_fit은 의뢰인의 역량과 직접 연결해서 판단
 - 정보가 부족하면 is_estimated: true + 보수적 점수
 `;
 }
@@ -140,7 +140,7 @@ ${items}
 규칙:
 - 단순 버그 불만(로그인 안 됨, 오류 발생)은 score 30 이하
 - 구조적 문제(기능 부재, 반복 수작업)는 가중치 높게
-- my_fit은 태남의 무기와 직접 연결해서 판단
+- my_fit은 의뢰인의 역량과 직접 연결해서 판단
 - 정보가 부족하면 is_estimated: true + 보수적 점수
 - 반드시 ${candidates.length}개 원소를 가진 배열로만 응답
 `;
