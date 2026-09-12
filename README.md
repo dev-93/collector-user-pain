@@ -37,7 +37,7 @@
 [AI 분석 — Gemini Flash]
 ├── 문제 구조화 (12개 항목)
 ├── 점수 산정 (0~100점)
-└── 태남 무기 적합도 판단
+└── 나의 역량 적합도 판단
          ↓
 [Problem DB — Notion]
          ↓
@@ -191,7 +191,7 @@ problem-radar/
 ├── src/
 │   ├── index.js                 # 메인 엔트리포인트
 │   ├── config/
-│   │   └── index.js             # 설정 (키워드, 점수 가중치, 태남 무기)
+│   │   └── index.js             # 설정 (키워드, 점수 가중치, 나의 역량)
 │   ├── collectors/
 │   │   ├── naver-kin.js         # 네이버 지식iN + 블로그 수집기
 │   │   └── app-reviews.js       # 구글플레이 + 앱스토어 수집기
