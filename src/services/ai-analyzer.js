@@ -1,55 +1,115 @@
 /**
  * ai-analyzer.js
- * Gemini API로 수집된 불평 원문을 구조화된 Problem으로 변환한다
+ * 수집된 불평 원문을 구조화된 Problem으로 변환한다
+ *
+ * AI_PROVIDER 환경변수로 provider 전환:
+ *   AI_PROVIDER=gemini    → Gemini API (기본, 무료 하루 20회)
+ *   AI_PROVIDER=openrouter → OpenRouter API (무료 모델 사용)
  *
  * 처리 흐름:
- *   원문 candidate → Gemini 분석 → Problem 구조체 → Notion 저장
+ *   원문 candidate → AI 분석 → Problem 구조체 → Notion 저장
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { SYSTEM_PROMPT, buildAnalysisPrompt, buildBatchAnalysisPrompt } from '../prompts/analyze.js';
 
-// gemini-3.6-flash: 안정 버전 고정 (변경 금지)
-// 무료 한도: 하루 20회 (GenerateRequestsPerDayPerProjectPerModel-FreeTier)
-// 배치 분석 사용 시 10건 = 1회 호출 → 하루 200건까지 커버 가능
-const MODEL = 'gemini-3.6-flash';
-
 // 배치 크기: 한 번의 API 호출로 처리할 최대 건수
 const BATCH_SIZE = 10;
 
+// Gemini 모델 (변경 금지)
+const GEMINI_MODEL = 'gemini-3.6-flash';
+
+// OpenRouter 기본 모델 — 무료 + 한국어 품질 우수
+// 환경변수 OPENROUTER_MODEL 로 재정의 가능
+const OPENROUTER_DEFAULT_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
 class AIAnalyzer {
   constructor() {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY가 .env에 없습니다.');
+    this.provider = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
+
+    if (this.provider === 'openrouter') {
+      if (!process.env.OPENROUTER_API_KEY) {
+        throw new Error('OPENROUTER_API_KEY가 .env에 없습니다.');
+      }
+      this.openrouterModel = process.env.OPENROUTER_MODEL || OPENROUTER_DEFAULT_MODEL;
+      console.log(`🔀 AI Provider: OpenRouter (${this.openrouterModel})`);
+    } else {
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY가 .env에 없습니다.');
+      }
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      this.geminiModel = genAI.getGenerativeModel({
+        model: GEMINI_MODEL,
+        systemInstruction: SYSTEM_PROMPT,
+      });
+      console.log(`🔀 AI Provider: Gemini (${GEMINI_MODEL})`);
     }
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    this.model = genAI.getGenerativeModel({
-      model: MODEL,
-      systemInstruction: SYSTEM_PROMPT,
+  }
+
+  /**
+   * provider에 맞게 텍스트 생성 요청
+   * @param {string} prompt
+   * @returns {Promise<string>} 응답 텍스트
+   */
+  async generateText(prompt) {
+    if (this.provider === 'openrouter') {
+      return this._openrouterGenerate(prompt);
+    }
+    const result = await this.geminiModel.generateContent(prompt);
+    return result.response.text().trim();
+  }
+
+  /**
+   * OpenRouter API 호출 (OpenAI 호환)
+   */
+  async _openrouterGenerate(prompt) {
+    const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/problem-radar',
+        'X-Title': 'Problem Radar',
+      },
+      body: JSON.stringify({
+        model: this.openrouterModel,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.3,
+      }),
     });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      // 한도 초과 감지
+      if (response.status === 429 || errText.includes('quota') || errText.includes('rate limit')) {
+        throw new QuotaExceededError(`OpenRouter 한도 초과: ${errText}`);
+      }
+      throw new Error(`OpenRouter API 오류 ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content?.trim() || '';
   }
 
   /**
    * 단일 candidate 분석
-   * @param {Object} candidate - 수집기가 반환한 원문 데이터
-   * @returns {Object|null} 분석 결과 또는 null
-   * @throws {Error} 429 일일 한도 초과 시 — 상위에서 즉시 중단 처리
    */
   async analyze(candidate) {
     const prompt = buildAnalysisPrompt(candidate);
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const text = result.response.text().trim();
+      const text = await this.generateText(prompt);
 
-      // JSON 파싱
       const parsed = parseJSON(text);
       if (!parsed) {
         console.warn('⚠️  JSON 파싱 실패:', text.slice(0, 100));
         return null;
       }
 
-      // 원본 메타 정보 병합
       return {
         ...parsed,
         source: candidate.source,
@@ -61,14 +121,12 @@ class AIAnalyzer {
           : '기각',
       };
     } catch (err) {
-      // 일일 한도 초과 — 재시도 없이 즉시 상위로 throw (analyzeAll이 중단)
+      if (err instanceof QuotaExceededError) throw err;
       const isQuotaExceeded =
         err.message?.includes('429') ||
         err.message?.includes('Quota exceeded') ||
         err.message?.includes('quota');
-      if (isQuotaExceeded) {
-        throw new QuotaExceededError(err.message);
-      }
+      if (isQuotaExceeded) throw new QuotaExceededError(err.message);
       console.error('❌ AI 분석 오류:', err.message);
       return null;
     }
@@ -76,24 +134,19 @@ class AIAnalyzer {
 
   /**
    * 배치 단위 분석 — BATCH_SIZE건을 1회 API 호출로 처리
-   * @param {Array} batch - 최대 BATCH_SIZE건의 candidates
-   * @returns {Promise<Array>} 분석 결과 배열 (실패한 건은 null)
-   * @throws {QuotaExceededError} 일일 한도 초과 시
    */
   async analyzeBatch(batch) {
     const prompt = buildBatchAnalysisPrompt(batch);
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const text = result.response.text().trim();
+      const text = await this.generateText(prompt);
 
       const parsed = parseBatchJSON(text, batch.length);
       if (!parsed) {
         console.warn(`⚠️  배치 JSON 파싱 실패 (${batch.length}건) — 개별 분석으로 폴백`);
-        return null; // null 반환 시 호출부에서 개별 분석으로 대체
+        return null;
       }
 
-      // 원본 메타 정보 병합
       return parsed.map((item, i) => {
         const candidate = batch[i];
         if (!item) return null;
@@ -109,13 +162,12 @@ class AIAnalyzer {
         };
       });
     } catch (err) {
+      if (err instanceof QuotaExceededError) throw err;
       const isQuotaExceeded =
         err.message?.includes('429') ||
         err.message?.includes('Quota exceeded') ||
         err.message?.includes('quota');
-      if (isQuotaExceeded) {
-        throw new QuotaExceededError(err.message);
-      }
+      if (isQuotaExceeded) throw new QuotaExceededError(err.message);
       console.error('❌ 배치 분석 오류:', err.message);
       return null;
     }
@@ -126,12 +178,6 @@ class AIAnalyzer {
    * - preScore 상위 AI_LIMIT건만 AI로 분석 (하루 한도 보호)
    * - 나머지는 규칙 기반 preScore를 score로 사용 (폴백)
    * - BATCH_SIZE건씩 묶어 1회 API 호출로 처리 (토큰 절감)
-   *
-   * @param {Array} candidates - preScore 내림차순 정렬된 목록
-   * @param {Object} options
-   * @param {number} options.minScore - 이 점수 미만은 저장 스킵
-   * @param {number} options.aiLimit - AI로 분석할 최대 건수 (기본 15)
-   * @returns {Promise<Array>} 분석 완료된 문제 목록
    */
   async analyzeAll(candidates, options = {}) {
     const { minScore = 70, aiLimit = parseInt(process.env.AI_LIMIT) || 15 } = options;
@@ -157,7 +203,6 @@ class AIAnalyzer {
         const batchResults = await this.analyzeBatch(batch);
 
         if (batchResults === null) {
-          // 파싱 실패 — 해당 배치를 개별 호출로 폴백
           console.log(`\n  ↩️  배치 ${batchIdx + 1} 개별 분석 폴백...`);
           for (const candidate of batch) {
             try {
@@ -176,9 +221,8 @@ class AIAnalyzer {
       } catch (err) {
         if (err instanceof QuotaExceededError) {
           process.stdout.write('\n');
-          console.error(`\n🚫 일일 API 한도 초과 — AI 분석 중단 (배치 ${batchIdx + 1}/${totalBatches})`);
+          console.error(`\n🚫 API 한도 초과 — AI 분석 중단 (배치 ${batchIdx + 1}/${totalBatches})`);
           console.error('   규칙 점수로 나머지를 채웁니다.');
-          // 남은 AI 대상도 규칙 점수 폴백으로 처리 (현재 배치 포함)
           const remaining = aiTargets.slice(start);
           ruleTargets.unshift(...remaining);
           break;
@@ -186,13 +230,12 @@ class AIAnalyzer {
         throw err;
       }
 
-      // 배치 간 간격 (RPM 제한 대응)
       if (batchIdx < totalBatches - 1) await sleep(2000);
     }
 
     process.stdout.write('\n');
 
-    // 규칙 점수 폴백: preScore를 score로 사용해서 결과 구조 통일
+    // 규칙 점수 폴백
     const ruleResults = ruleTargets.map((c) => ({
       problem_summary: c.raw_title?.slice(0, 60) || c.original_text?.slice(0, 60) || '(요약 없음)',
       target_user: null,
@@ -233,7 +276,6 @@ class AIAnalyzer {
 
   /**
    * 직접 제보 텍스트 분석 (Telegram /report 커맨드용)
-   * 사용자가 직접 입력한 문제 설명을 구조화
    */
   async analyzeRawText(text, source = '직접 제보') {
     const candidate = {
@@ -248,8 +290,6 @@ class AIAnalyzer {
 
   /**
    * TOP 문제 5 Why 분석
-   * 수집/점수화 단계 이후, 좋은 문제를 더 깊이 파고들 때 사용
-   * @param {Object} problem - 분석이 완료된 Problem 구조체
    */
   async analyzeWhyChain(problem) {
     const prompt = `
@@ -279,8 +319,7 @@ JSON 형식으로만 응답:
 `;
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const text = result.response.text().trim();
+      const text = await this.generateText(prompt);
       return parseJSON(text);
     } catch (err) {
       console.error('❌ 5 Why 분석 오류:', err.message);
@@ -292,7 +331,6 @@ JSON 형식으로만 응답:
 // JSON 파싱 (마크다운 코드블록 제거 후 시도)
 function parseJSON(text) {
   try {
-    // ```json ... ``` 또는 ``` ... ``` 제거
     const cleaned = text
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
@@ -300,25 +338,15 @@ function parseJSON(text) {
       .trim();
     return JSON.parse(cleaned);
   } catch {
-    // JSON 부분만 추출 시도
     const match = text.match(/\{[\s\S]*\}/);
     if (match) {
-      try {
-        return JSON.parse(match[0]);
-      } catch {
-        return null;
-      }
+      try { return JSON.parse(match[0]); } catch { return null; }
     }
     return null;
   }
 }
 
-/**
- * 배치 응답 파싱 — JSON 배열 추출
- * @param {string} text - Gemini 응답 원문
- * @param {number} expectedCount - 기대하는 배열 원소 수
- * @returns {Array|null}
- */
+// 배치 응답 파싱 — JSON 배열 추출
 function parseBatchJSON(text, expectedCount) {
   try {
     const cleaned = text
@@ -328,21 +356,24 @@ function parseBatchJSON(text, expectedCount) {
       .trim();
     const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed) && parsed.length === expectedCount) return parsed;
-    // 원소 수가 다르면 있는 것만 사용 (부분 성공 허용)
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     return null;
   } catch {
-    // 배열 부분만 추출 시도
     const match = text.match(/\[[\s\S]*\]/);
     if (match) {
       try {
         const parsed = JSON.parse(match[0]);
         if (Array.isArray(parsed)) return parsed;
-      } catch {
-        return null;
-      }
+      } catch { return null; }
     }
     return null;
+  }
+}
+
+class QuotaExceededError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'QuotaExceededError';
   }
 }
 
