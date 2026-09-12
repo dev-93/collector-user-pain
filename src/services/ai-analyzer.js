@@ -24,39 +24,50 @@ class AIAnalyzer {
   }
 
   /**
-   * 단일 candidate 분석
+   * 단일 candidate 분석 (429 Rate Limit 발생 시 자동 재시도)
    * @param {Object} candidate - 수집기가 반환한 원문 데이터
+   * @param {number} retries - 재시도 횟수
    * @returns {Object|null} 분석 결과 또는 null (분석 실패 시)
    */
-  async analyze(candidate) {
+  async analyze(candidate, retries = 3) {
     const prompt = buildAnalysisPrompt(candidate);
 
-    try {
-      const result = await this.model.generateContent(prompt);
-      const text = result.response.text().trim();
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const result = await this.model.generateContent(prompt);
+        const text = result.response.text().trim();
 
-      // JSON 파싱
-      const parsed = parseJSON(text);
-      if (!parsed) {
-        console.warn('⚠️  JSON 파싱 실패:', text.slice(0, 100));
+        // JSON 파싱
+        const parsed = parseJSON(text);
+        if (!parsed) {
+          console.warn('⚠️  JSON 파싱 실패:', text.slice(0, 100));
+          return null;
+        }
+
+        // 원본 메타 정보 병합
+        return {
+          ...parsed,
+          source: candidate.source,
+          source_url: candidate.source_url,
+          original_text: candidate.original_text,
+          collected_at: candidate.collected_at || new Date().toISOString(),
+          status: (parsed.score || 0) >= (parseInt(process.env.MIN_SCORE) || 50)
+            ? '수집됨'
+            : '기각',
+        };
+      } catch (err) {
+        const isRateLimit = err.message?.includes('429') || err.message?.includes('Quota exceeded');
+        if (isRateLimit && attempt < retries) {
+          const waitTime = attempt * 5000;
+          console.warn(`\n⚠️ Gemini API 한도(429) 발생. ${waitTime / 1000}초 후 재시도 (${attempt}/${retries})...`);
+          await sleep(waitTime);
+          continue;
+        }
+        console.error('❌ AI 분석 오류:', err.message);
         return null;
       }
-
-      // 원본 메타 정보 병합
-      return {
-        ...parsed,
-        source: candidate.source,
-        source_url: candidate.source_url,
-        original_text: candidate.original_text,
-        collected_at: candidate.collected_at || new Date().toISOString(),
-        status: (parsed.score || 0) >= (parseInt(process.env.MIN_SCORE) || 50)
-          ? '수집됨'
-          : '기각',
-      };
-    } catch (err) {
-      console.error('❌ AI 분석 오류:', err.message);
-      return null;
     }
+    return null;
   }
 
   /**
