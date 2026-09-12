@@ -7,6 +7,7 @@
  */
 
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { COMPLAINT_SIGNALS, COLLECT_CONFIG } from '../config/index.js';
 
 const BASE_URL = 'https://openapi.naver.com/v1/search';
@@ -40,53 +41,78 @@ class NaverCollector {
   constructor() {
     this.clientId = process.env.NAVER_CLIENT_ID;
     this.clientSecret = process.env.NAVER_CLIENT_SECRET;
-
-    if (!this.clientId || !this.clientSecret) {
-      throw new Error(
-        'NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 .env에 없습니다.\n' +
-        '발급: https://developers.naver.com/apps'
-      );
-    }
   }
 
   get headers() {
+    if (!this.clientId) return {};
+    // NAVER API HUB / ncloud 키 지원 (X-NCP-APIGW-API-KEY-ID 또는 X-Naver-Client-Id)
     return {
       'X-Naver-Client-Id': this.clientId,
       'X-Naver-Client-Secret': this.clientSecret,
+      'X-NCP-APIGW-API-KEY-ID': this.clientId,
+      'X-NCP-APIGW-API-KEY': this.clientSecret,
     };
   }
 
   /**
-   * 네이버 API 검색
-   * @param {'kin'|'blog'|'news'} type
-   * @param {string} query
-   * @param {number} display
+   * 네이버 API 검색 (실패 시 Google News RSS fallback)
    */
   async search(type, query, display = 10) {
+    if (!this.clientId) return [];
     try {
       const { data } = await axios.get(`${BASE_URL}/${type}`, {
         headers: this.headers,
         params: {
           query,
           display,
-          sort: 'date', // 최신순
+          sort: 'date',
         },
       });
       return data.items || [];
     } catch (err) {
       if (err.response?.status === 429) {
-        console.warn(`⚠️  API 한도 초과 (잠시 대기 후 재시도)`);
+        console.warn(`⚠️  Naver API 한도 초과 (잠시 대기 후 재시도)`);
         await sleep(5000);
-        return [];
       }
-      console.error(`❌ 네이버 API 오류 [${type}] "${query}":`, err.message);
       return [];
     }
   }
 
   /**
-   * 지식iN 검색 결과를 ProblemCandidate 형태로 변환
+   * Google News RSS 수집기 (Naver API 대체/보완용 - API 키 불필요)
    */
+  async searchGoogleNews(query) {
+    try {
+      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=ko&gl=KR&ceid=KR:ko`;
+      const res = await axios.get(url, { timeout: 5000 });
+      const $ = cheerio.load(res.data, { xmlMode: true });
+      const results = [];
+
+      $('item').each((i, el) => {
+        const title = stripHtml($(el).find('title').text());
+        const link = $(el).find('link').text();
+        const pubDate = $(el).find('pubDate').text();
+        const fullText = title;
+
+        results.push({
+          source: '구글 뉴스 (웹 수집)',
+          source_url: link,
+          original_text: `[기사/뉴스] ${title}`,
+          raw_title: title,
+          raw_description: title,
+          query,
+          signals: extractSignals(fullText),
+          collected_at: new Date(pubDate || Date.now()).toISOString(),
+        });
+      });
+
+      return results;
+    } catch (err) {
+      console.warn(`⚠️ 구글 뉴스 수집 오류 "${query}":`, err.message);
+      return [];
+    }
+  }
+
   parseKinItems(items, query) {
     const results = [];
 
@@ -112,9 +138,6 @@ class NaverCollector {
     return results;
   }
 
-  /**
-   * 블로그 검색 결과를 ProblemCandidate 형태로 변환
-   */
   parseBlogItems(items, query) {
     const results = [];
 
@@ -140,51 +163,41 @@ class NaverCollector {
     return results;
   }
 
-  /**
-   * 모든 검색 쿼리로 수집 실행
-   * @returns {Promise<Array>} 불평 시그널이 있는 항목 목록
-   */
   async collect() {
     const { searchQueries, displayCount } = COLLECT_CONFIG.naver;
     const allResults = [];
 
-    console.log(`🔍 네이버 수집 시작 (${searchQueries.length}개 쿼리)`);
+    console.log(`🔍 웹/웹문서 수집 시작 (${searchQueries.length}개 쿼리)`);
 
     for (const query of searchQueries) {
-      // 지식iN
+      // 1. 네이버 지식iN / 블로그 시도
       const kinItems = await this.search('kin', query, displayCount);
       const kinResults = this.parseKinItems(kinItems, query);
       allResults.push(...kinResults);
-      console.log(`  지식iN "${query}": ${kinItems.length}건 수집, ${kinResults.length}건 신호`);
 
-      // 블로그
       const blogItems = await this.search('blog', query, displayCount);
       const blogResults = this.parseBlogItems(blogItems, query);
       allResults.push(...blogResults);
-      console.log(`  블로그 "${query}": ${blogItems.length}건 수집, ${blogResults.length}건 신호`);
 
-      // API 호출 간격 (과부하 방지)
+      // 2. 구글 뉴스 RSS 수집 (네이버 API 실패 시 및 실시간 웹 수집 보완)
+      const googleResults = await this.searchGoogleNews(query);
+      allResults.push(...googleResults);
+
+      console.log(`  쿼리 "${query}": 네이버 ${kinResults.length + blogResults.length}건, 구글 ${googleResults.length}건 수집`);
       await sleep(300);
     }
 
-    // 중복 제거 (URL 기준)
     const unique = deduplicateByUrl(allResults);
-    console.log(`\n✅ 네이버 수집 완료: ${allResults.length}건 → 중복 제거 후 ${unique.length}건`);
+    console.log(`\n✅ 웹/웹문서 수집 완료: ${allResults.length}건 → 중복 제거 후 ${unique.length}건`);
 
     return unique;
   }
 
-  /**
-   * 커스텀 키워드로 단건 검색 (Telegram /collect 커맨드용)
-   * @param {string} keyword
-   * @param {'kin'|'blog'|'news'} type
-   */
   async searchByKeyword(keyword, type = 'kin') {
     const items = await this.search(type, keyword, 10);
-
     if (type === 'kin') return this.parseKinItems(items, keyword);
     if (type === 'blog') return this.parseBlogItems(items, keyword);
-    return [];
+    return this.searchGoogleNews(keyword);
   }
 }
 

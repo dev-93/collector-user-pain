@@ -9,7 +9,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { SYSTEM_PROMPT, buildAnalysisPrompt } from '../prompts/analyze.js';
 
-const MODEL = 'gemini-1.5-flash'; // 비용 효율적. 고품질 필요 시 gemini-1.5-pro로 교체
+const MODEL = 'gemini-3.6-flash'; // 최신 Gemini 3.6 Flash 모델 사용
 
 class AIAnalyzer {
   constructor() {
