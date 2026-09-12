@@ -32,6 +32,8 @@ async function runCollect() {
 
   // MIN_SCORE: 70번이상만 Notion 저장 (DB 과적 방지)
   const minScore = parseInt(process.env.MIN_SCORE) || 70;
+  // NOTION_TOP_N: Notion에 저장할 최대 건수 (기본 5건 — 보기 쉽게 유지)
+  const notionTopN = parseInt(process.env.NOTION_TOP_N) || 5;
 
   // 1. 수집
   console.log('=== STEP 1: 수집 ===');
@@ -56,7 +58,7 @@ async function runCollect() {
   console.log('=== STEP 2: 사전 필터 (토큰 절감) ===');
   const candidates = preFilter(rawCandidates, {
     minPreScore: 40,
-    maxCount: 50,  // Gemini Free: 15 RPM → 50건 기준 약 5분 소요
+    maxCount: 30,  // AI_LIMIT(15) × 2 버퍼 — 배치 2회 호출로 처리
     verbose: true,
   });
 
@@ -65,13 +67,23 @@ async function runCollect() {
     return;
   }
 
-  // 3. AI 분석 (preFilter 통과 한 것만)
+  // 3. AI 분석 (preFilter 통과 한 것만, 상위 AI_LIMIT건만 AI 호출 — 나머지 규칙 점수 폴백)
   console.log('=== STEP 3: AI 분석 ===');
   const analyzed = await analyzer.analyzeAll(candidates, { minScore });
 
-  // 4. Notion 저장 (score 70+ 만)
+  // 4. Notion 저장 (score 기준 상위 notionTopN건만)
   console.log('=== STEP 4: Notion 저장 ===');
-  await notion.saveAll(analyzed, minScore);
+  const toSave = analyzed
+    .filter((p) => (p.score || 0) >= minScore)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, notionTopN);
+
+  if (toSave.length === 0) {
+    console.log(`점수 ${minScore}+ 문제가 없어 Notion 저장을 건너뜁니다.`);
+  } else {
+    console.log(`💾 Notion 저장 대상: 상위 ${toSave.length}건 (전체 통과 ${analyzed.filter(p => p.score >= minScore).length}건 중)`);
+    await notion.saveAll(toSave, minScore);
+  }
 
   // 5. TOP 10 출력
   console.log('\n=== 🔥 TOP 10 문제 ===\n');

@@ -89,3 +89,59 @@ ${candidate.signals?.length ? `\n감지된 불평 신호: ${candidate.signals.jo
 - 정보가 부족하면 is_estimated: true + 보수적 점수
 `;
 }
+
+/**
+ * 배치 분석용 프롬프트 — 여러 건을 한 번의 API 호출로 처리
+ * @param {Array} candidates - 최대 10건
+ * @returns {string} 프롬프트 문자열
+ */
+export function buildBatchAnalysisPrompt(candidates) {
+  const items = candidates
+    .map((c, i) => `
+--- [${i}] ---
+출처: ${c.source}
+URL: ${c.source_url || 'N/A'}
+텍스트: ${c.original_text.slice(0, 400)}
+${c.signals?.length ? `불평 신호: ${c.signals.join(', ')}` : ''}
+`.trim())
+    .join('\n\n');
+
+  return `
+아래 ${candidates.length}건의 원문을 각각 분석해서 JSON 배열로만 응답하라.
+마크다운 코드블록 없이 순수 JSON 배열만. 반드시 ${candidates.length}개 원소를 가진 배열이어야 한다.
+
+[원문 목록]
+${items}
+
+[각 항목에 대한 분석 형식]
+배열의 각 원소는 인덱스 순서대로 아래 구조를 따른다:
+
+{
+  "problem_summary": "문제를 한 문장으로 요약 (30자 이내, 한국어)",
+  "target_user": "이 문제를 겪는 사람",
+  "context": "어떤 상황에서 발생하는가 (1~2문장)",
+  "problem_category": "정보 탐색|행정/서류|예약/스케줄|결제/금융|의사소통|반복 작업|비교/선택|배움/교육|이동/물류|건강/의료|육아/가족|직장/업무|기타 중 하나",
+  "current_solution": "지금 사람들이 이 문제를 어떻게 해결하고 있는가",
+  "solution_gap": "현재 해결책의 문제점",
+  "competitors": "기존 경쟁 서비스 (없으면 '없음')",
+  "frequency": 1~10,
+  "pain": 1~10,
+  "willingness_to_pay": 1~10,
+  "market_size": 1~10,
+  "competition_gap": 1~10,
+  "my_fit": 1~10,
+  "development_difficulty": 1~10,
+  "score": 0~100 (빈도×20% + 고통×20% + 지불의사×20% + 시장성×15% + 경쟁기회×10% + 내적합도×15% - 개발난이도×10%),
+  "is_estimated": true/false,
+  "mvp_idea": "1~7일 MVP 아이디어 또는 null",
+  "skip_reason": "점수 50 미만 이유 또는 null"
+}
+
+규칙:
+- 단순 버그 불만(로그인 안 됨, 오류 발생)은 score 30 이하
+- 구조적 문제(기능 부재, 반복 수작업)는 가중치 높게
+- my_fit은 태남의 무기와 직접 연결해서 판단
+- 정보가 부족하면 is_estimated: true + 보수적 점수
+- 반드시 ${candidates.length}개 원소를 가진 배열로만 응답
+`;
+}
