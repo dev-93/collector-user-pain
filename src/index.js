@@ -17,6 +17,7 @@ import AIAnalyzer from './services/ai-analyzer.js';
 import NotionService from './services/notion-service.js';
 import ValidationService from './services/validation-service.js';
 import ProblemRadarBot from './services/telegram-bot.js';
+import { preFilter } from './utils/pre-filter.js';
 
 const args = process.argv.slice(2);
 const mode = args.find((a) => a.startsWith('--'))?.replace('--', '') || 'bot';
@@ -29,7 +30,8 @@ async function runCollect() {
   const analyzer = new AIAnalyzer();
   const notion = new NotionService();
 
-  const minScore = parseInt(process.env.MIN_SCORE) || 50;
+  // MIN_SCORE: 70번이상만 Notion 저장 (DB 과적 방지)
+  const minScore = parseInt(process.env.MIN_SCORE) || 70;
 
   // 1. 수집
   console.log('=== STEP 1: 수집 ===');
@@ -38,27 +40,40 @@ async function runCollect() {
     appCollector.collect(),
   ]);
 
-  const candidates = [
+  const rawCandidates = [
     ...(naverResults.status === 'fulfilled' ? naverResults.value : []),
     ...(appResults.status === 'fulfilled' ? appResults.value : []),
   ];
 
-  console.log(`\n총 수집: ${candidates.length}건\n`);
+  console.log(`\n원본 수집: ${rawCandidates.length}건`);
 
-  if (candidates.length === 0) {
+  if (rawCandidates.length === 0) {
     console.log('수집된 항목이 없습니다. 종료.');
     return;
   }
 
-  // 2. AI 분석
-  console.log('=== STEP 2: AI 분석 ===');
+  // 2. 사전 필터 (규칙 기반, 0 토큰)
+  console.log('=== STEP 2: 사전 필터 (토큰 절감) ===');
+  const candidates = preFilter(rawCandidates, {
+    minPreScore: 40,
+    maxCount: 50,  // Gemini Free: 15 RPM → 50건 기준 약 5분 소요
+    verbose: true,
+  });
+
+  if (candidates.length === 0) {
+    console.log('사전 필터 통과 항목이 없습니다. 수집 키워드 조정을 고려하세요.');
+    return;
+  }
+
+  // 3. AI 분석 (preFilter 통과 한 것만)
+  console.log('=== STEP 3: AI 분석 ===');
   const analyzed = await analyzer.analyzeAll(candidates, { minScore });
 
-  // 3. Notion 저장
-  console.log('=== STEP 3: Notion 저장 ===');
+  // 4. Notion 저장 (score 70+ 만)
+  console.log('=== STEP 4: Notion 저장 ===');
   await notion.saveAll(analyzed, minScore);
 
-  // 4. TOP 10 출력
+  // 5. TOP 10 출력
   console.log('\n=== 🔥 TOP 10 문제 ===\n');
   const top10 = analyzed
     .filter((p) => p.score >= minScore)
