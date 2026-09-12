@@ -3,10 +3,11 @@
  * Problem Radar 메인 엔트리포인트
  *
  * 실행 방법:
- *   node --env-file=.env src/index.js           — 봇 모드 (기본)
- *   node --env-file=.env src/index.js --collect — 1회 수집 + 분석 후 종료
- *   node --env-file=.env src/index.js --top     — TOP 10 터미널 출력
- *   node --env-file=.env src/index.js --analyze — 미분석 항목만 분석
+ *   node --env-file=.env src/index.js            — 봇 모드 (기본)
+ *   node --env-file=.env src/index.js --collect  — 1회 수집 + 분석 후 종료
+ *   node --env-file=.env src/index.js --top      — TOP 10 터미널 출력
+ *   node --env-file=.env src/index.js --validate — TOP 문제에서 검증 가설 자동 생성
+ *   node --env-file=.env src/index.js --valstat  — 검증 실험실 현황 조회
  */
 
 import 'dotenv/config';
@@ -14,6 +15,7 @@ import NaverCollector from './collectors/naver-kin.js';
 import AppReviewCollector from './collectors/app-reviews.js';
 import AIAnalyzer from './services/ai-analyzer.js';
 import NotionService from './services/notion-service.js';
+import ValidationService from './services/validation-service.js';
 import ProblemRadarBot from './services/telegram-bot.js';
 
 const args = process.argv.slice(2);
@@ -104,6 +106,56 @@ async function runBot() {
   new ProblemRadarBot();
 }
 
+/**
+ * TOP 문제에서 검증 가설 자동 생성
+ * 점수 70+ 수집됨 상태의 문제를 Notion 검증 DB에 등록
+ */
+async function runValidate() {
+  console.log('\n🧪 Problem Radar — 검증 가설 자동 생성\n');
+
+  const notion = new NotionService();
+  const validation = new ValidationService();
+
+  // TOP 20 문제 조회
+  const problems = await notion.getTopProblems(20);
+  console.log(`📋 조회된 문제: ${problems.length}건 (score 70+ 필터링 후 검증 가설 생성)`);
+
+  await validation.autoCreateFromProblems(problems, 5);
+
+  console.log('\n✅ 완료 — Notion 검증 실험실에서 확인하세요.');
+}
+
+/**
+ * 검증 실험실 현황 조회
+ */
+async function runValStat() {
+  console.log('\n📊 Problem Radar — 검증 실험실 현황\n');
+
+  const validation = new ValidationService();
+
+  const [stats, active] = await Promise.all([
+    validation.getStats(),
+    validation.getActiveExperiments(),
+  ]);
+
+  console.log(`전체 실험: ${stats.total}건`);
+  console.log(`  ✅ Go (통과): ${stats.go}건`);
+  console.log(`  🔄 Pivot 필요: ${stats.pivot}건`);
+  console.log(`  ❌ Kill (폐기): ${stats.kill}건`);
+  console.log(`  🔬 진행중/가설: ${stats.inProgress}건`);
+
+  if (active.length > 0) {
+    console.log('\n⏳ 현재 진행 중인 실험:');
+    active.forEach((exp, i) => {
+      console.log(`  ${i + 1}. [${exp.status}] ${exp.name}`);
+      console.log(`     채널: ${exp.channel} | 목표: ${exp.target_metric}`);
+      console.log(`     Notion: ${exp.notion_url}`);
+    });
+  } else {
+    console.log('\n진행 중인 실험이 없습니다. --validate 로 생성하세요.');
+  }
+}
+
 // 실행
 switch (mode) {
   case 'collect':
@@ -115,6 +167,20 @@ switch (mode) {
 
   case 'top':
     runTop().catch((err) => {
+      console.error('❌ 오류:', err.message);
+      process.exit(1);
+    });
+    break;
+
+  case 'validate':
+    runValidate().catch((err) => {
+      console.error('❌ 오류:', err.message);
+      process.exit(1);
+    });
+    break;
+
+  case 'valstat':
+    runValStat().catch((err) => {
       console.error('❌ 오류:', err.message);
       process.exit(1);
     });

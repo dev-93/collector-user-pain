@@ -6,13 +6,15 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "collect": "node src/index.js --collect",
-    "collect:naver": "node src/collectors/naver-kin.js",
-    "collect:apps": "node src/collectors/app-reviews.js",
-    "analyze": "node src/index.js --analyze",
-    "top": "node src/index.js --top",
-    "bot": "node src/services/telegram-bot.js",
-    "setup:notion": "node scripts/setup-notion.js",
+    "collect": "node --env-file=.env src/index.js --collect",
+    "collect:naver": "node --env-file=.env src/collectors/naver-kin.js",
+    "collect:apps": "node --env-file=.env src/collectors/app-reviews.js",
+    "top": "node --env-file=.env src/index.js --top",
+    "validate": "node --env-file=.env src/index.js --validate",
+    "valstat": "node --env-file=.env src/index.js --valstat",
+    "bot": "node --env-file=.env src/services/telegram-bot.js",
+    "setup:notion": "node --env-file=.env scripts/setup-notion.js",
+    "setup:validation": "node --env-file=.env scripts/setup-validation-db.js",
     "dev": "node --env-file=.env src/index.js"
   },
   "engines": {
