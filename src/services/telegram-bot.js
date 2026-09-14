@@ -19,6 +19,9 @@ import NaverCollector from '../collectors/naver-kin.js';
 import AppReviewCollector from '../collectors/app-reviews.js';
 import AIAnalyzer from './ai-analyzer.js';
 import NotionService from './notion-service.js';
+import { MIN_SCORE } from '../config/index.js';
+import { preFilter } from '../utils/pre-filter.js';
+import { clusterProblems } from '../utils/problem-cluster.js';
 
 const ALLOWED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
   ? Number(process.env.TELEGRAM_CHAT_ID)
@@ -123,9 +126,10 @@ class ProblemRadarBot {
         ...(appResults.status === 'fulfilled' ? appResults.value : []),
       ];
 
+      const filtered = preFilter(candidates, { minPreScore: 40, maxCount: 30, verbose: false });
       await this.bot.sendMessage(
         chatId,
-        `📦 수집 완료: ${candidates.length}건\n🤖 AI 분석 중... (건당 약 1~2초)`
+        `📦 수집 완료: ${candidates.length}건\n🔬 사전 필터 통과: ${filtered.length}건\n🤖 AI 분석 중...`
       );
 
       if (candidates.length === 0) {
@@ -134,8 +138,8 @@ class ProblemRadarBot {
       }
 
       // 2. AI 분석
-      const minScore = parseInt(process.env.MIN_SCORE) || 50;
-      const analyzed = await this.analyzer.analyzeAll(candidates, { minScore });
+      const minScore = MIN_SCORE;
+      const analyzed = clusterProblems(await this.analyzer.analyzeAll(filtered, { minScore }));
 
       // 3. Notion 저장
       const { saved } = await this.notion.saveAll(analyzed, minScore);
@@ -291,7 +295,7 @@ class ProblemRadarBot {
         return;
       }
 
-      const minScore = parseInt(process.env.MIN_SCORE) || 50;
+      const minScore = MIN_SCORE;
 
       if (result.score >= minScore) {
         await this.notion.saveProblem(result);

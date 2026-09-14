@@ -68,6 +68,11 @@ ${candidate.signals?.length ? `\n감지된 불평 신호: ${candidate.signals.jo
   "solution_gap": "현재 해결책의 문제점",
   "competitors": "기존 경쟁 서비스 (없으면 '없음')",
 
+  "evidence_quote": "원문에서 문제를 직접 보여주는 짧은 인용 (없으면 null)",
+  "evidence_type": "직접 경험|반복 행동|현재 지출|단순 불만|정보 부족 중 하나",
+  "evidence_gaps": ["이 원문만으로 알 수 없는 중요한 사실"],
+  "confidence": "high|medium|low",
+
   "frequency": 1~10 (이 문제가 얼마나 자주 발생하는가),
   "pain": 1~10 (얼마나 고통스러운가),
   "willingness_to_pay": 1~10 (돈을 낼 가능성),
@@ -79,6 +84,8 @@ ${candidate.signals?.length ? `\n감지된 불평 신호: ${candidate.signals.jo
 
   "is_estimated": true/false (점수가 추정에 기반하면 true),
   "mvp_idea": "1~7일 안에 만들 수 있는 MVP 아이디어 (없으면 null)",
+  "validation_question": "가장 먼저 검증해야 할 질문",
+  "validation_offer": "코딩 전에 제안할 수 있는 수동 해결/유료 테스트",
   "skip_reason": "점수 50 미만이라면 낮은 이유 설명, 아니면 null"
 }
 
@@ -87,6 +94,8 @@ ${candidate.signals?.length ? `\n감지된 불평 신호: ${candidate.signals.jo
 - 구조적 문제(기능 부재, 반복 수작업)는 가중치 높게
 - my_fit은 의뢰인의 역량과 직접 연결해서 판단
 - 정보가 부족하면 is_estimated: true + 보수적 점수
+- frequency, willingness_to_pay, market_size는 원문에 근거가 없으면 낮게 평가하고 evidence_gaps에 이유를 적는다
+- 개인의 증상, 사고, 법률·금융 문의 자체는 사업 문제로 간주하지 않는다. 반복 업무나 지불 행동이 명시되지 않으면 낮은 점수를 준다
 `;
 }
 
@@ -124,6 +133,10 @@ ${items}
   "current_solution": "지금 사람들이 이 문제를 어떻게 해결하고 있는가",
   "solution_gap": "현재 해결책의 문제점",
   "competitors": "기존 경쟁 서비스 (없으면 '없음')",
+  "evidence_quote": "원문 인용 또는 null",
+  "evidence_type": "직접 경험|반복 행동|현재 지출|단순 불만|정보 부족 중 하나",
+  "evidence_gaps": ["확인되지 않은 핵심 가정"],
+  "confidence": "high|medium|low",
   "frequency": 1~10,
   "pain": 1~10,
   "willingness_to_pay": 1~10,
@@ -134,6 +147,8 @@ ${items}
   "score": 0~100 (빈도×20% + 고통×20% + 지불의사×20% + 시장성×15% + 경쟁기회×10% + 내적합도×15% - 개발난이도×10%),
   "is_estimated": true/false,
   "mvp_idea": "1~7일 MVP 아이디어 또는 null",
+  "validation_question": "가장 먼저 검증할 질문",
+  "validation_offer": "수동 해결 또는 유료 테스트 제안",
   "skip_reason": "점수 50 미만 이유 또는 null"
 }
 
@@ -142,6 +157,7 @@ ${items}
 - 구조적 문제(기능 부재, 반복 수작업)는 가중치 높게
 - my_fit은 의뢰인의 역량과 직접 연결해서 판단
 - 정보가 부족하면 is_estimated: true + 보수적 점수
+- 개인의 증상, 사고, 법률·금융 문의 자체는 사업 문제로 간주하지 않는다. 반복 업무나 지불 행동이 없으면 보수적으로 평가
 - 반드시 ${candidates.length}개 원소를 가진 배열로만 응답
 `;
 }

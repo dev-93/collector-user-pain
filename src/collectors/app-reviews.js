@@ -55,6 +55,7 @@ class AppReviewCollector {
           app_id: appId,
           app_name: appName,
           rating: review.score,
+          source_item_id: `${appId}:${review.id || review.reviewId || text.slice(0, 80)}`,
           signals,
           // 시그널이 없어도 저점수 리뷰는 일단 수집 (AI가 분석)
           collected_at: new Date().toISOString(),
@@ -102,6 +103,7 @@ class AppReviewCollector {
           app_id: String(appId),
           app_name: appName,
           rating: review.score,
+          source_item_id: `${appId}:${review.id || review.reviewId || text.slice(0, 80)}`,
           signals,
           collected_at: new Date().toISOString(),
         });

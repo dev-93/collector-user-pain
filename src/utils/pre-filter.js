@@ -11,6 +11,8 @@
  *   - 출처 신뢰도 (지식iN > 구글 뉴스)
  */
 
+import { COMPLAINT_SIGNALS } from '../config/index.js';
+
 // 노이즈 패턴 (광고, 버그 리포트, 개인 일상 등 — 사업 기회 아님)
 const NOISE_PATTERNS = [
   // 광고/홍보
@@ -36,7 +38,7 @@ const NOISE_PATTERNS = [
 const HIGH_VALUE_PATTERNS = [
   // 반복/수작업 고통
   '방법이 없', '어디서 해야', '대신 해주는', '해주는 곳이 없',
-  '매번 이렇게', '엑셀로', '수작업으로', '직접 해야',
+  '매번', '엑셀로', '수작업으로', '직접 해야',
   '왜 이런 기능이', '자동으로 안',
   // 구조적 부재 신호
   '한곳에서 안', '한 곳에서 안', '통합해주는 곳이', '연동이 안',
@@ -59,13 +61,15 @@ function calcPreScore(candidate) {
   if (NOISE_PATTERNS.some((p) => fullText.includes(p))) return 0;
 
   // 최소 길이 (너무 짧으면 정보 없음) — 구글 뉴스 제목만 있는 경우 20자로 완화
-  const minLen = candidate.source?.includes('구글 뉴스') ? 20 : 30;
+  const minLen = candidate.source?.includes('구글 뉴스') || candidate.source?.includes('지식iN') ? 20 : 30;
   if (text.length < minLen) return 0;
 
   let score = 0;
 
   // 불평 신호 개수 (핵심 지표)
-  const signalCount = candidate.signals?.length || 0;
+  // 검색 쿼리 자체에서 주입된 signals는 증거가 아니다. 원문에 실제로 나타난
+  // 표현만 계산해야 검색 결과 제목만으로 높은 점수를 받는 일을 막을 수 있다.
+  const signalCount = COMPLAINT_SIGNALS.filter((p) => fullText.includes(p)).length;
   score += signalCount * 20; // 25 → 20으로 완화 (쿼리 보정 신호 포함되므로)
 
   // 고품질 패턴 가산
@@ -85,6 +89,9 @@ function calcPreScore(candidate) {
   if (candidate.source?.includes('지식iN')) score += 15;
   // 앱리뷰는 실사용자 불만 = 신뢰도 높음
   if (candidate.source?.includes('앱 리뷰') || candidate.source?.includes('App Review')) score += 10;
+
+  // 지식iN/뉴스의 일반 질문은 사업 신호가 없으면 AI 후보로 보내지 않는다.
+  if (candidate.source?.includes('지식iN') && signalCount === 0 && highValueCount === 0) return 0;
 
   return Math.min(score, 100);
 }
@@ -136,7 +143,11 @@ export function preFilter(candidates, options = {}) {
 export function deduplicateSimilar(candidates) {
   const seen = new Map();
   return candidates.filter((c) => {
-    const key = (c.raw_title || c.original_text || '').slice(0, 20).trim();
+    const key = (c.raw_title || c.original_text || '')
+      .toLowerCase()
+      .replace(/[^가-힣a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (!key || seen.has(key)) return false;
     seen.set(key, true);
     return true;

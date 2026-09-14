@@ -18,6 +18,7 @@ import NotionService from './services/notion-service.js';
 import ValidationService from './services/validation-service.js';
 import ProblemRadarBot from './services/telegram-bot.js';
 import { preFilter } from './utils/pre-filter.js';
+import { clusterProblems } from './utils/problem-cluster.js';
 import { MIN_SCORE } from './config/index.js';
 
 const args = process.argv.slice(2);
@@ -70,7 +71,7 @@ async function runCollect() {
 
   // 3. AI 분석 (preFilter 통과 한 것만, 상위 AI_LIMIT건만 AI 호출 — 나머지 규칙 점수 폴백)
   console.log('=== STEP 3: AI 분석 ===');
-  const analyzed = await analyzer.analyzeAll(candidates, { minScore });
+  const analyzed = clusterProblems(await analyzer.analyzeAll(candidates, { minScore }));
 
   // 4. Notion 저장 (score 기준 상위 notionTopN건만)
   console.log('=== STEP 4: Notion 저장 ===');

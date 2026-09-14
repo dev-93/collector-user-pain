@@ -26,9 +26,11 @@ class NotionService {
    * @returns {Object} 생성된 Notion 페이지
    */
   async saveProblem(problem) {
-    // 같은 URL이 이미 있으면 스킵 (중복 방지)
-    if (problem.source_url) {
-      const existing = await this.findByUrl(problem.source_url);
+    // 원문 단위 ID로 중복을 막는다. 앱 리뷰는 앱 상세 URL이 같으므로 URL만
+    // 기준으로 삼으면 같은 앱의 여러 리뷰가 모두 사라진다.
+    const sourceItemId = problem.source_item_id || problem.source_url || hashText(problem.original_text);
+    if (sourceItemId) {
+      const existing = await this.findBySourceItemId(sourceItemId);
       if (existing) {
         return { skipped: true, id: existing.id };
       }
@@ -52,6 +54,29 @@ class NotionService {
       props['원문링크'] = { url: problem.source_url };
     if (problem.status)
       props['상태'] = { select: { name: problem.status } };
+    props['원문ID'] = { rich_text: [{ text: { content: sourceItemId } }] };
+    if (problem.original_text)
+      props['원문'] = { rich_text: [{ text: { content: problem.original_text.slice(0, 1800) } }] };
+    if (problem.evidence_quote)
+      props['근거 인용'] = { rich_text: [{ text: { content: problem.evidence_quote } }] };
+    if (problem.evidence_type)
+      props['근거 유형'] = { select: { name: problem.evidence_type } };
+    if (problem.confidence)
+      props['신뢰도'] = { select: { name: problem.confidence } };
+    if (problem.validation_question)
+      props['검증 질문'] = { rich_text: [{ text: { content: problem.validation_question } }] };
+    if (problem.validation_offer)
+      props['검증 제안'] = { rich_text: [{ text: { content: problem.validation_offer } }] };
+    if (problem.current_solution)
+      props['현재 해결 방식'] = { rich_text: [{ text: { content: problem.current_solution } }] };
+    if (problem.solution_gap)
+      props['해결 공백'] = { rich_text: [{ text: { content: problem.solution_gap } }] };
+    if (problem.problem_group)
+      props['문제군'] = { rich_text: [{ text: { content: problem.problem_group } }] };
+    if (problem.evidence_count != null)
+      props['동일 문제 증거수'] = { number: Number(problem.evidence_count) };
+    if (problem.evidence_gaps?.length)
+      props['근거 부족'] = { rich_text: [{ text: { content: problem.evidence_gaps.join(' / ') } }] };
 
     const date = problem.collected_at || new Date().toISOString();
     props['수집일'] = { date: { start: date.split('T')[0] } };
@@ -77,6 +102,11 @@ class NotionService {
     console.log(`💾 Notion 저장 시작: ${problems.length}건 (점수 ${minScore}+ 필터)`);
 
     for (const problem of problems) {
+      // 규칙 점수만 있는 후보는 사업 문제로 저장하지 않는다.
+      if (problem.analysis_status !== 'ai_analyzed') {
+        skipped++;
+        continue;
+      }
       if ((problem.score || 0) < minScore) {
         skipped++;
         continue;
@@ -106,11 +136,11 @@ class NotionService {
   /**
    * URL로 기존 항목 검색 (중복 방지용)
    */
-  async findByUrl(url) {
+  async findBySourceItemId(sourceItemId) {
     try {
       const response = await this.client.databases.query({
         database_id: this.problemDbId,
-        filter: { property: '원문링크', url: { equals: url } },
+        filter: { property: '원문ID', rich_text: { equals: sourceItemId } },
         page_size: 1,
       });
       return response.results[0] || null;
@@ -150,6 +180,10 @@ class NotionService {
       properties: { '상태': { select: { name: status } } },
     });
   }
+}
+
+function hashText(text = '') {
+  return text ? `text:${text.trim().slice(0, 500)}` : null;
 }
 
 function extractProblemFromPage(page) {

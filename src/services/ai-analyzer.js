@@ -12,7 +12,7 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { SYSTEM_PROMPT, buildAnalysisPrompt, buildBatchAnalysisPrompt } from '../prompts/analyze.js';
-import { AI_CONFIG, MIN_SCORE } from '../config/index.js';
+import { AI_CONFIG, MIN_SCORE, SCORE_WEIGHTS, DEVELOPMENT_PENALTY_WEIGHT } from '../config/index.js';
 
 // 배치 크기: 한 번의 API 호출로 처리할 최대 건수
 const BATCH_SIZE = 10;
@@ -181,13 +181,17 @@ class AIAnalyzer {
         return null;
       }
 
+      const score = calculateScore(parsed);
       return {
         ...parsed,
+        score,
+        analysis_status: 'ai_analyzed',
         source: candidate.source,
         source_url: candidate.source_url,
+        source_item_id: candidate.source_item_id,
         original_text: candidate.original_text,
         collected_at: candidate.collected_at || new Date().toISOString(),
-        status: (parsed.score || 0) >= MIN_SCORE ? '수집됨' : '기각',
+        status: score >= MIN_SCORE ? '수집됨' : '기각',
       };
     } catch (err) {
       if (err instanceof QuotaExceededError) throw err;
@@ -216,13 +220,17 @@ class AIAnalyzer {
       return parsed.map((item, i) => {
         const candidate = batch[i];
         if (!item) return null;
+        const score = calculateScore(item);
         return {
           ...item,
+          score,
+          analysis_status: 'ai_analyzed',
           source: candidate.source,
           source_url: candidate.source_url,
+          source_item_id: candidate.source_item_id,
           original_text: candidate.original_text,
           collected_at: candidate.collected_at || new Date().toISOString(),
-          status: (item.score || 0) >= MIN_SCORE ? '수집됨' : '기각',
+          status: score >= MIN_SCORE ? '수집됨' : '기각',
         };
       });
     } catch (err) {
@@ -311,7 +319,9 @@ class AIAnalyzer {
       competition_gap: null,
       my_fit: null,
       development_difficulty: null,
-      score: c.preScore || 0,
+      score: null,
+      rule_score: c.preScore || 0,
+      analysis_status: 'rule_only',
       is_estimated: true,
       mvp_idea: null,
       skip_reason: 'AI 한도 초과로 규칙 점수 사용',
@@ -319,7 +329,7 @@ class AIAnalyzer {
       source_url: c.source_url,
       original_text: c.original_text,
       collected_at: c.collected_at || new Date().toISOString(),
-      status: (c.preScore || 0) >= minScore ? '수집됨(규칙)' : '기각',
+      status: '검토필요',
     }));
 
     const allResults = [...aiResults, ...ruleResults];
@@ -439,6 +449,19 @@ class QuotaExceededError extends Error {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// 모델이 임의로 작성한 score를 신뢰하지 않고, 구조화된 1~10 필드로 재계산한다.
+// 양의 항목은 0~100으로 정규화하고 개발 난이도는 최대 10점 감점한다.
+function calculateScore(result) {
+  const value = (key) => {
+    const n = Number(result?.[key]);
+    return Number.isFinite(n) ? Math.max(0, Math.min(10, n)) : 0;
+  };
+  const positive = Object.entries(SCORE_WEIGHTS)
+    .reduce((sum, [key, weight]) => sum + value(key) * weight, 0) * 10;
+  const penalty = value('development_difficulty') * DEVELOPMENT_PENALTY_WEIGHT;
+  return Math.round(Math.max(0, Math.min(100, positive - penalty)));
 }
 
 export default AIAnalyzer;

@@ -65,6 +65,7 @@ async function createProblemDB() {
           options: [
             { name: '수집됨', color: 'gray' },
             { name: '수집됨(규칙)', color: 'default' },
+            { name: '검토필요', color: 'yellow' },
             { name: '검증대상', color: 'blue' },
             { name: '검증완료', color: 'green' },
             { name: '기각', color: 'red' },
@@ -73,6 +74,36 @@ async function createProblemDB() {
       },
       '수집일': { date: {} },
       '다음 검증 실험': { rich_text: {} },
+      '원문ID': { rich_text: {} },
+      '원문': { rich_text: {} },
+      '근거 인용': { rich_text: {} },
+      '근거 유형': {
+        select: {
+          options: [
+            { name: '직접 경험', color: 'green' },
+            { name: '반복 행동', color: 'blue' },
+            { name: '현재 지출', color: 'red' },
+            { name: '단순 불만', color: 'yellow' },
+            { name: '정보 부족', color: 'gray' },
+          ],
+        },
+      },
+      '신뢰도': {
+        select: {
+          options: [
+            { name: 'high', color: 'green' },
+            { name: 'medium', color: 'yellow' },
+            { name: 'low', color: 'red' },
+          ],
+        },
+      },
+      '검증 질문': { rich_text: {} },
+      '검증 제안': { rich_text: {} },
+      '현재 해결 방식': { rich_text: {} },
+      '해결 공백': { rich_text: {} },
+      '문제군': { rich_text: {} },
+      '동일 문제 증거수': { number: { format: 'number' } },
+      '근거 부족': { rich_text: {} },
     },
   });
 
