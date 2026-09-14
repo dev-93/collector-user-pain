@@ -1,3 +1,22 @@
+// AI 분석 설정
+export const AI_CONFIG = {
+  // 폴백 체인 순서: OpenRouter → Groq → Gemini
+  openrouter: {
+    model: 'google/gemma-4-26b-a4b-it:free',
+    baseUrl: 'https://openrouter.ai/api/v1',
+  },
+  groq: {
+    model: 'llama-3.3-70b-versatile',
+    baseUrl: 'https://api.groq.com/openai/v1',
+  },
+  gemini: {
+    model: 'gemini-2.0-flash',
+  },
+};
+
+// 최소 점수 (이 이상만 Notion 저장 / TOP 10 출력)
+export const MIN_SCORE = 70;
+
 // 불평 시그널 키워드 — 이 표현이 원석이다
 export const COMPLAINT_SIGNALS = [
   '방법이 없나',

@@ -18,6 +18,7 @@ import NotionService from './services/notion-service.js';
 import ValidationService from './services/validation-service.js';
 import ProblemRadarBot from './services/telegram-bot.js';
 import { preFilter } from './utils/pre-filter.js';
+import { MIN_SCORE } from './config/index.js';
 
 const args = process.argv.slice(2);
 const mode = args.find((a) => a.startsWith('--'))?.replace('--', '') || 'bot';
@@ -30,8 +31,8 @@ async function runCollect() {
   const analyzer = new AIAnalyzer();
   const notion = new NotionService();
 
-  // MIN_SCORE: 70번이상만 Notion 저장 (DB 과적 방지)
-  const minScore = parseInt(process.env.MIN_SCORE) || 70;
+  // MIN_SCORE: config에서 관리 (기본 70점)
+  const minScore = MIN_SCORE;
   // NOTION_TOP_N: Notion에 저장할 최대 건수 (기본 5건 — 보기 쉽게 유지)
   const notionTopN = parseInt(process.env.NOTION_TOP_N) || 5;
 
