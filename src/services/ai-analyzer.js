@@ -3,8 +3,8 @@
  * 수집된 불평 원문을 구조화된 Problem으로 변환한다
  *
  * AI_PROVIDER 환경변수로 provider 전환:
- *   AI_PROVIDER=gemini    → Gemini API (기본, 무료 하루 20회)
- *   AI_PROVIDER=openrouter → OpenRouter API (무료 모델 사용)
+ *   AI_PROVIDER=gemini      → Gemini API만 사용
+ *   AI_PROVIDER=openrouter  → OpenRouter 1차 호출, 429 한도 초과 시 Gemini로 자동 폴백
  *
  * 처리 흐름:
  *   원문 candidate → AI 분석 → Problem 구조체 → Notion 저장
@@ -27,13 +27,26 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 class AIAnalyzer {
   constructor() {
     this.provider = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
+    // OpenRouter 한도 초과 후 Gemini 폴백 세션 중 지속 여부
+    this._geminiFallbackActive = false;
 
     if (this.provider === 'openrouter') {
       if (!process.env.OPENROUTER_API_KEY) {
         throw new Error('OPENROUTER_API_KEY가 .env에 없습니다.');
       }
       this.openrouterModel = process.env.OPENROUTER_MODEL || OPENROUTER_DEFAULT_MODEL;
-      console.log(`🔀 AI Provider: OpenRouter (${this.openrouterModel})`);
+
+      // Gemini 폴백을 위해 키가 있으면 함께 초기화
+      if (process.env.GEMINI_API_KEY) {
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        this.geminiModel = genAI.getGenerativeModel({
+          model: GEMINI_MODEL,
+          systemInstruction: SYSTEM_PROMPT,
+        });
+        console.log(`🔀 AI Provider: OpenRouter (${this.openrouterModel}) + Gemini 폴백 준비`);
+      } else {
+        console.log(`🔀 AI Provider: OpenRouter (${this.openrouterModel}) [Gemini 폴백 없음 — GEMINI_API_KEY 미설정]`);
+      }
     } else {
       if (!process.env.GEMINI_API_KEY) {
         throw new Error('GEMINI_API_KEY가 .env에 없습니다.');
@@ -49,12 +62,41 @@ class AIAnalyzer {
 
   /**
    * provider에 맞게 텍스트 생성 요청
+   * OpenRouter 429 발생 시 Gemini로 자동 폴백 (이후 호출도 Gemini 유지)
    * @param {string} prompt
    * @returns {Promise<string>} 응답 텍스트
    */
   async generateText(prompt) {
+    // 이미 Gemini 폴백 세션이면 바로 Gemini 사용
+    if (this._geminiFallbackActive) {
+      return this._geminiGenerate(prompt);
+    }
+
     if (this.provider === 'openrouter') {
-      return this._openrouterGenerate(prompt);
+      try {
+        return await this._openrouterGenerate(prompt);
+      } catch (err) {
+        if (err instanceof QuotaExceededError && this.geminiModel) {
+          // 처음 폴백 전환 시 한 번만 로그 출력
+          if (!this._geminiFallbackActive) {
+            console.warn('\n⚡ OpenRouter 한도 초과 — 이후 호출은 Gemini로 전환합니다.');
+            this._geminiFallbackActive = true;
+          }
+          return this._geminiGenerate(prompt);
+        }
+        throw err;
+      }
+    }
+
+    return this._geminiGenerate(prompt);
+  }
+
+  /**
+   * Gemini API 호출
+   */
+  async _geminiGenerate(prompt) {
+    if (!this.geminiModel) {
+      throw new Error('Gemini 모델이 초기화되지 않았습니다. GEMINI_API_KEY를 .env에 추가하세요.');
     }
     const result = await this.geminiModel.generateContent(prompt);
     return result.response.text().trim();
@@ -215,6 +257,38 @@ class AIAnalyzer {
       } catch (err) {
         if (err instanceof QuotaExceededError) {
           process.stdout.write('\n');
+          if (this.geminiModel && !this._geminiFallbackActive) {
+            // 폴백 전환은 generateText에서 이미 처리됨 — 배치 재시도
+            console.warn(`\n⚡ OpenRouter 한도 초과 (배치 ${batchIdx + 1}/${totalBatches}) — Gemini로 재시도합니다.`);
+            this._geminiFallbackActive = true;
+            try {
+              const batchResults = await this.analyzeBatch(batch);
+              if (batchResults === null) {
+                console.log(`\n  ↩️  배치 ${batchIdx + 1} 개별 분석 폴백...`);
+                for (const candidate of batch) {
+                  try {
+                    const result = await this.analyze(candidate);
+                    if (result) aiResults.push(result);
+                  } catch (innerErr) {
+                    if (innerErr instanceof QuotaExceededError) break;
+                  }
+                  await sleep(1000);
+                }
+              } else {
+                for (const r of batchResults) {
+                  if (r) aiResults.push(r);
+                }
+              }
+              continue;
+            } catch (retryErr) {
+              // Gemini도 실패하면 규칙 점수로 전환
+              console.error(`\n🚫 Gemini 재시도도 실패 — 규칙 점수로 전환합니다.`);
+              const remaining = aiTargets.slice(start);
+              ruleTargets.unshift(...remaining);
+              break;
+            }
+          }
+          // Gemini 폴백 없거나 이미 Gemini 사용 중인데 또 한도 초과
           console.error(`\n🚫 API 한도 초과 — AI 분석 중단 (배치 ${batchIdx + 1}/${totalBatches})`);
           console.error('   규칙 점수로 나머지를 채웁니다.');
           const remaining = aiTargets.slice(start);
@@ -224,7 +298,7 @@ class AIAnalyzer {
         throw err;
       }
 
-      if (batchIdx < totalBatches - 1) await sleep(2000);
+      if (batchIdx < totalBatches - 1) await sleep(3000);
     }
 
     process.stdout.write('\n');

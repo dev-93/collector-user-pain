@@ -57,7 +57,7 @@ async function runCollect() {
   // 2. 사전 필터 (규칙 기반, 0 토큰)
   console.log('=== STEP 2: 사전 필터 (토큰 절감) ===');
   const candidates = preFilter(rawCandidates, {
-    minPreScore: 20,  // 완화 — 쿼리 신호 보정으로 최소 20점은 확보됨
+    minPreScore: 40,  // 가벼운 불평 제외 — 구조적 문제만 통과
     maxCount: 30,  // AI_LIMIT(15) × 2 버퍼 — 배치 2회 호출로 처리
     verbose: true,
   });
