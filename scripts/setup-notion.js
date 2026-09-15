@@ -30,53 +30,19 @@ async function createProblemDB() {
     properties: {
       '문제': { title: {} },
       '점수': { number: { format: 'number' } },
-      '카테고리': {
-        select: {
-          options: [
-            { name: '정보 탐색', color: 'blue' },
-            { name: '행정/서류', color: 'red' },
-            { name: '예약/스케줄', color: 'green' },
-            { name: '결제/금융', color: 'yellow' },
-            { name: '의사소통', color: 'purple' },
-            { name: '반복 작업', color: 'orange' },
-            { name: '비교/선택', color: 'pink' },
-            { name: '배움/교육', color: 'gray' },
-            { name: '건강/의료', color: 'red' },
-            { name: '직장/업무', color: 'blue' },
-            { name: '기타', color: 'default' },
-          ],
-        },
-      },
       '대상': { rich_text: {} },
-      '출처': {
-        select: {
-          options: [
-            { name: '네이버 지식iN', color: 'green' },
-            { name: '네이버 블로그', color: 'blue' },
-            { name: '구글 뉴스 (웹 수집)', color: 'purple' },
-            { name: '구글 플레이', color: 'red' },
-            { name: '직접 제보', color: 'pink' },
-          ],
-        },
-      },
       '원문링크': { url: {} },
       '상태': {
         select: {
           options: [
             { name: '수집됨', color: 'gray' },
-            { name: '수집됨(규칙)', color: 'default' },
-            { name: '검토필요', color: 'yellow' },
             { name: '검증대상', color: 'blue' },
-            { name: '검증완료', color: 'green' },
             { name: '기각', color: 'red' },
           ],
         },
       },
       '수집일': { date: {} },
-      '다음 검증 실험': { rich_text: {} },
       '원문ID': { rich_text: {} },
-      '원문': { rich_text: {} },
-      '근거 인용': { rich_text: {} },
       '근거 유형': {
         select: {
           options: [
@@ -88,22 +54,7 @@ async function createProblemDB() {
           ],
         },
       },
-      '신뢰도': {
-        select: {
-          options: [
-            { name: 'high', color: 'green' },
-            { name: 'medium', color: 'yellow' },
-            { name: 'low', color: 'red' },
-          ],
-        },
-      },
-      '검증 질문': { rich_text: {} },
-      '검증 제안': { rich_text: {} },
-      '현재 해결 방식': { rich_text: {} },
-      '해결 공백': { rich_text: {} },
-      '문제군': { rich_text: {} },
       '동일 문제 증거수': { number: { format: 'number' } },
-      '근거 부족': { rich_text: {} },
     },
   });
 

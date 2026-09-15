@@ -48,35 +48,15 @@ class NotionService {
       props['카테고리'] = { select: { name: problem.problem_category } };
     if (problem.target_user)
       props['대상'] = { rich_text: [{ text: { content: problem.target_user } }] };
-    if (problem.source)
-      props['출처'] = { select: { name: problem.source } };
     if (problem.source_url)
       props['원문링크'] = { url: problem.source_url };
     if (problem.status)
       props['상태'] = { select: { name: problem.status } };
     props['원문ID'] = { rich_text: [{ text: { content: sourceItemId } }] };
-    if (problem.original_text)
-      props['원문'] = { rich_text: [{ text: { content: problem.original_text.slice(0, 1800) } }] };
-    if (problem.evidence_quote)
-      props['근거 인용'] = { rich_text: [{ text: { content: problem.evidence_quote } }] };
     if (problem.evidence_type)
       props['근거 유형'] = { select: { name: problem.evidence_type } };
-    if (problem.confidence)
-      props['신뢰도'] = { select: { name: problem.confidence } };
-    if (problem.validation_question)
-      props['검증 질문'] = { rich_text: [{ text: { content: problem.validation_question } }] };
-    if (problem.validation_offer)
-      props['검증 제안'] = { rich_text: [{ text: { content: problem.validation_offer } }] };
-    if (problem.current_solution)
-      props['현재 해결 방식'] = { rich_text: [{ text: { content: problem.current_solution } }] };
-    if (problem.solution_gap)
-      props['해결 공백'] = { rich_text: [{ text: { content: problem.solution_gap } }] };
-    if (problem.problem_group)
-      props['문제군'] = { rich_text: [{ text: { content: problem.problem_group } }] };
     if (problem.evidence_count != null)
       props['동일 문제 증거수'] = { number: Number(problem.evidence_count) };
-    if (problem.evidence_gaps?.length)
-      props['근거 부족'] = { rich_text: [{ text: { content: problem.evidence_gaps.join(' / ') } }] };
 
     const date = problem.collected_at || new Date().toISOString();
     props['수집일'] = { date: { start: date.split('T')[0] } };
@@ -84,6 +64,7 @@ class NotionService {
     const page = await this.client.pages.create({
       parent: { database_id: this.problemDbId },
       properties: props,
+      children: buildProblemBlocks(problem),
     });
 
     return page;
@@ -205,14 +186,63 @@ function extractProblemFromPage(page) {
     id: page.id,
     notion_url: page.url,
     problem_summary: get('문제', 'title'),
-    source: get('출처', 'select'),
+    source: null,
     source_url: get('원문링크', 'url'),
     target_user: get('대상', 'rich_text'),
-    problem_category: get('카테고리', 'select'),
+    problem_category: null,
     score: get('점수', 'number'),
     status: get('상태', 'select'),
     collected_at: get('수집일', 'date'),
   };
+}
+
+function buildProblemBlocks(problem) {
+  const blocks = [];
+  const addHeading = (text) => blocks.push({
+    object: 'block', type: 'heading_2', heading_2: { rich_text: richText(text) },
+  });
+  const addParagraph = (label, value) => {
+    if (!value) return;
+    blocks.push({
+      object: 'block', type: 'paragraph', paragraph: { rich_text: richText(`${label}: ${value}`) },
+    });
+  };
+
+  addHeading('원문 근거');
+  if (problem.evidence_quote) {
+    blocks.push({
+      object: 'block', type: 'quote', quote: { rich_text: richText(problem.evidence_quote) },
+    });
+  }
+  if (problem.source_url) {
+    blocks.push({
+      object: 'block', type: 'paragraph', paragraph: {
+        rich_text: [{ type: 'text', text: { content: '원문 링크', link: { url: problem.source_url } } }],
+      },
+    });
+  }
+  addParagraph('원문', problem.original_text);
+
+  addHeading('관찰');
+  addParagraph('출처', problem.source);
+  addParagraph('카테고리', problem.problem_category);
+  addParagraph('신뢰도', problem.confidence);
+  addParagraph('문제군', problem.problem_group);
+  addParagraph('현재 해결 방식', problem.current_solution);
+  addParagraph('해결 공백', problem.solution_gap);
+  addParagraph('근거 부족', problem.evidence_gaps?.join(' / '));
+
+  addHeading('검증');
+  addParagraph('검증 질문', problem.validation_question);
+  addParagraph('수동 제안', problem.validation_offer);
+  addParagraph('다음 검증 실험', problem.next_validation_experiment);
+
+  return blocks;
+}
+
+function richText(content) {
+  const safe = String(content).slice(0, 1900);
+  return safe ? [{ type: 'text', text: { content: safe } }] : [];
 }
 
 function sleep(ms) {
