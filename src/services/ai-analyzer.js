@@ -144,32 +144,54 @@ class AIAnalyzer {
 
   /**
    * Groq API 호출 (OpenAI 호환)
+   * - 우선 모델이 404를 반환하면 fallbackModel로 재시도
+   * - 429는 다음 provider로 폴백하도록 QuotaExceededError를 던짐
    */
   async _groqGenerate(prompt) {
-    const response = await fetch(`${AI_CONFIG.groq.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: AI_CONFIG.groq.model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-      }),
-    });
+    const models = [
+      AI_CONFIG.groq.model,
+      ...(AI_CONFIG.groq.fallbackModel ? [AI_CONFIG.groq.fallbackModel] : []),
+    ];
 
-    if (!response.ok) {
+    let lastErr;
+    for (const model of models) {
+      const response = await fetch(`${AI_CONFIG.groq.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.3,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content?.trim() || '';
+      }
+
       const errText = await response.text();
-      if (response.status === 429) throw new QuotaExceededError(`Groq 한도 초과: ${errText}`);
-      throw new Error(`Groq API 오류 ${response.status}: ${errText}`);
+      if (response.status === 429) {
+        throw new QuotaExceededError(`Groq 한도 초과: ${errText}`);
+      }
+      if (response.status === 404) {
+        // 모델이 없거나 접근 불가 → 다음 모델 시도
+        console.warn(`\n⚠️  Groq 모델 [${model}] 없음(404) — 다음 모델로 시도합니다.`);
+        lastErr = new Error(`Groq API 오류 ${response.status}: ${errText}`);
+        continue;
+      }
+      // 그 외 오류는 즉시 다음 provider로 폴백 (QuotaExceededError로 래핑)
+      throw new QuotaExceededError(`Groq 오류(${response.status}), 다음 provider로 전환: ${errText}`);
     }
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content?.trim() || '';
+    // 모든 모델 실패 시 다음 provider로 폴백
+    throw new QuotaExceededError(`Groq 모델 전체 실패 — 다음 provider로 전환: ${lastErr?.message}`);
   }
 
   /**

@@ -6,7 +6,12 @@ export const AI_CONFIG = {
     baseUrl: 'https://openrouter.ai/api/v1',
   },
   groq: {
-    model: 'llama-3.3-70b-versatile',
+    // 우선 모델 → 404 시 fallbackModel 순으로 시도
+    // (이 계정에서 llama 모델 접근 불가 — openai/gpt-oss 사용)
+    // gpt-oss-120b: JSON 지시 준수 + 보수적 평가 → 이 프로젝트에 가장 적합
+    // gpt-oss-20b: 경량 폴백용
+    model: 'openai/gpt-oss-120b',
+    fallbackModel: 'openai/gpt-oss-20b',
     baseUrl: 'https://api.groq.com/openai/v1',
   },
   gemini: {
