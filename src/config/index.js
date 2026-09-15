@@ -110,6 +110,13 @@ export const MY_WEAPONS = {
 // 수집 설정
 export const COLLECT_CONFIG = {
   naver: {
+    // 기본 수집은 사용자가 직접 쓴 질문 원문만 사용한다. 블로그·뉴스는 배경 맥락일 뿐
+    // 반복 문제의 직접 증거로 점수화하지 않는다.
+    sources: {
+      kin: true,
+      blog: false,
+      googleNews: false,
+    },
     // 검색할 키워드 조합 (문제 도메인 + 불평 신호)
     searchQueries: [
       // 반복 수작업 고통

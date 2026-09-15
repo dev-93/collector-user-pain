@@ -167,23 +167,25 @@ class NaverCollector {
   }
 
   async collect() {
-    const { searchQueries, displayCount } = COLLECT_CONFIG.naver;
+    const { searchQueries, displayCount, sources = {} } = COLLECT_CONFIG.naver;
     const allResults = [];
 
-    console.log(`🔍 웹/웹문서 수집 시작 (${searchQueries.length}개 쿼리)`);
+    console.log(`🔍 사용자 질문 원문 수집 시작 (${searchQueries.length}개 쿼리)`);
 
     for (const query of searchQueries) {
-      // 1. 네이버 지식iN / 블로그 시도
-      const kinItems = await this.search('kin', query, displayCount);
-      const kinResults = this.parseKinItems(kinItems, query);
+      const kinResults = sources.kin === false
+        ? []
+        : this.parseKinItems(await this.search('kin', query, displayCount), query);
       allResults.push(...kinResults);
 
-      const blogItems = await this.search('blog', query, displayCount);
-      const blogResults = this.parseBlogItems(blogItems, query);
+      const blogResults = sources.blog
+        ? this.parseBlogItems(await this.search('blog', query, displayCount), query)
+        : [];
       allResults.push(...blogResults);
 
-      // 2. 구글 뉴스 RSS 수집 (네이버 API 실패 시 및 실시간 웹 수집 보완)
-      const googleResults = await this.searchGoogleNews(query);
+      const googleResults = sources.googleNews
+        ? await this.searchGoogleNews(query)
+        : [];
       allResults.push(...googleResults);
 
       console.log(`  쿼리 "${query}": 네이버 ${kinResults.length + blogResults.length}건, 구글 ${googleResults.length}건 수집`);

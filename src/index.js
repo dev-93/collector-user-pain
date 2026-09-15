@@ -12,7 +12,6 @@
 
 import 'dotenv/config';
 import NaverCollector from './collectors/naver-kin.js';
-import AppReviewCollector from './collectors/app-reviews.js';
 import AIAnalyzer from './services/ai-analyzer.js';
 import NotionService from './services/notion-service.js';
 import ValidationService from './services/validation-service.js';
@@ -28,7 +27,6 @@ async function runCollect() {
   console.log('\n🚀 Problem Radar — 수집 + 분석 모드\n');
 
   const naverCollector = new NaverCollector();
-  const appCollector = new AppReviewCollector();
   const analyzer = new AIAnalyzer();
   const notion = new NotionService();
 
@@ -37,15 +35,7 @@ async function runCollect() {
 
   // 1. 수집
   console.log('=== STEP 1: 수집 ===');
-  const [naverResults, appResults] = await Promise.allSettled([
-    naverCollector.collect(),
-    appCollector.collect(),
-  ]);
-
-  const rawCandidates = [
-    ...(naverResults.status === 'fulfilled' ? naverResults.value : []),
-    ...(appResults.status === 'fulfilled' ? appResults.value : []),
-  ];
+  const rawCandidates = await naverCollector.collect();
 
   console.log(`\n원본 수집: ${rawCandidates.length}건`);
 
