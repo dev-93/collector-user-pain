@@ -17,6 +17,9 @@ export const AI_CONFIG = {
 // 최소 점수 (이 이상만 Notion 저장 / TOP 10 출력)
 export const MIN_SCORE = 70;
 
+// 무료 티어에서는 한 번의 수동 수집에 한 배치(최대 5건)만 분석한다.
+export const FREE_TIER_AI_LIMIT = 5;
+
 // 불평 시그널 키워드 — 이 표현이 원석이다
 export const COMPLAINT_SIGNALS = [
   '방법이 없나',

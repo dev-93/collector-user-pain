@@ -12,7 +12,13 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { SYSTEM_PROMPT, buildAnalysisPrompt, buildBatchAnalysisPrompt } from '../prompts/analyze.js';
-import { AI_CONFIG, MIN_SCORE, SCORE_WEIGHTS, DEVELOPMENT_PENALTY_WEIGHT } from '../config/index.js';
+import {
+  AI_CONFIG,
+  MIN_SCORE,
+  SCORE_WEIGHTS,
+  DEVELOPMENT_PENALTY_WEIGHT,
+  FREE_TIER_AI_LIMIT,
+} from '../config/index.js';
 
 // 배치 크기: 한 번의 API 호출로 처리할 최대 건수
 const BATCH_SIZE = 10;
@@ -249,10 +255,16 @@ class AIAnalyzer {
    * - BATCH_SIZE건씩 묶어 1회 API 호출로 처리 (토큰 절감)
    */
   async analyzeAll(candidates, options = {}) {
-    const { minScore = MIN_SCORE, aiLimit = parseInt(process.env.AI_LIMIT) || 15 } = options;
+    const requestedLimit = parseInt(process.env.AI_LIMIT) || FREE_TIER_AI_LIMIT;
+    const {
+      minScore = MIN_SCORE,
+      aiLimit = requestedLimit,
+      allowIndividualFallback = false,
+    } = options;
+    const effectiveAiLimit = Math.min(aiLimit, FREE_TIER_AI_LIMIT);
 
-    const aiTargets = candidates.slice(0, aiLimit);
-    const ruleTargets = candidates.slice(aiLimit);
+    const aiTargets = candidates.slice(0, effectiveAiLimit);
+    const ruleTargets = candidates.slice(effectiveAiLimit);
 
     const totalBatches = Math.ceil(aiTargets.length / BATCH_SIZE);
     console.log(`🤖 AI 분석 시작: 상위 ${aiTargets.length}건 (${totalBatches}회 배치 호출)`);
@@ -272,6 +284,11 @@ class AIAnalyzer {
         const batchResults = await this.analyzeBatch(batch);
 
         if (batchResults === null) {
+          if (!allowIndividualFallback) {
+            console.log(`\n  ↩️  배치 ${batchIdx + 1} 결과를 읽지 못해 건너뜁니다 (무료 한도 보호).`);
+            continue;
+          }
+
           console.log(`\n  ↩️  배치 ${batchIdx + 1} 개별 분석 폴백...`);
           for (const candidate of batch) {
             try {

@@ -19,7 +19,7 @@ import ValidationService from './services/validation-service.js';
 import ProblemRadarBot from './services/telegram-bot.js';
 import { preFilter } from './utils/pre-filter.js';
 import { clusterProblems } from './utils/problem-cluster.js';
-import { MIN_SCORE } from './config/index.js';
+import { FREE_TIER_AI_LIMIT, MIN_SCORE } from './config/index.js';
 
 const args = process.argv.slice(2);
 const mode = args.find((a) => a.startsWith('--'))?.replace('--', '') || 'bot';
@@ -32,10 +32,8 @@ async function runCollect() {
   const analyzer = new AIAnalyzer();
   const notion = new NotionService();
 
-  // MIN_SCORE: config에서 관리 (기본 70점)
+  // 점수는 저장 기준이 아니라 터미널 검토 후보를 줄이는 보조 신호다.
   const minScore = MIN_SCORE;
-  // NOTION_TOP_N: Notion에 저장할 최대 건수 (기본 5건 — 보기 쉽게 유지)
-  const notionTopN = parseInt(process.env.NOTION_TOP_N) || 5;
 
   // 1. 수집
   console.log('=== STEP 1: 수집 ===');
@@ -60,7 +58,7 @@ async function runCollect() {
   console.log('=== STEP 2: 사전 필터 (토큰 절감) ===');
   const candidates = preFilter(rawCandidates, {
     minPreScore: 40,  // 가벼운 불평 제외 — 구조적 문제만 통과
-    maxCount: 30,  // AI_LIMIT(15) × 2 버퍼 — 배치 2회 호출로 처리
+    maxCount: 10,  // 무료 AI 한 배치 5건을 위한 후보 버퍼
     verbose: true,
   });
 
@@ -69,43 +67,59 @@ async function runCollect() {
     return;
   }
 
-  // 3. AI 분석 (preFilter 통과 한 것만, 상위 AI_LIMIT건만 AI 호출 — 나머지 규칙 점수 폴백)
+  // 3. AI 분석 — 무료 티어 기본 한 배치(5건). 나머지는 저장하지 않는 규칙 후보이다.
   console.log('=== STEP 3: AI 분석 ===');
-  const analyzed = clusterProblems(await analyzer.analyzeAll(candidates, { minScore }));
+  const analyzed = clusterProblems(await analyzer.analyzeAll(candidates, {
+    minScore,
+    allowIndividualFallback: false,
+  }));
 
-  // 4. Notion 저장 (score 기준 상위 notionTopN건만)
-  console.log('=== STEP 4: Notion 저장 ===');
+  // 4. 사용자가 직접 실행한 수집 결과만 Notion에 자동 저장한다.
   const toSave = analyzed
-    .filter((p) => (p.score || 0) >= minScore)
+    .filter((p) => p.analysis_status === 'ai_analyzed' && p.score >= minScore)
     .sort((a, b) => b.score - a.score)
-    .slice(0, notionTopN);
+    .slice(0, FREE_TIER_AI_LIMIT);
 
+  console.log('=== STEP 4: Notion 저장 ===');
   if (toSave.length === 0) {
-    console.log(`점수 ${minScore}+ 문제가 없어 Notion 저장을 건너뜁니다.`);
+    console.log(`점수 ${minScore}+ AI 분석 항목이 없어 Notion 저장을 건너뜁니다.`);
   } else {
-    console.log(`💾 Notion 저장 대상: 상위 ${toSave.length}건 (전체 통과 ${analyzed.filter(p => p.score >= minScore).length}건 중)`);
+    console.log(`💾 Notion 저장 대상: ${toSave.length}건`);
     await notion.saveAll(toSave, minScore);
   }
 
-  // 5. TOP 10 출력
-  console.log('\n=== 🔥 TOP 10 문제 ===\n');
-  const top10 = analyzed
-    .filter((p) => p.score >= minScore)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
-
-  if (top10.length === 0) {
-    console.log(`점수 ${minScore}+ 문제가 없었습니다.`);
-  } else {
-    top10.forEach((p, i) => {
-      console.log(`${i + 1}. [${p.score}점] ${p.problem_summary}`);
-      console.log(`   대상: ${p.target_user || '미분석'} | 카테고리: ${p.problem_category || '기타'}`);
-      console.log(`   출처: ${p.source || '-'} | 상태: ${p.status || '-'}`);
-      console.log();
-    });
-  }
+  printReviewCandidates(toSave);
 
   console.log('✅ 완료');
+}
+
+function printReviewCandidates(problems) {
+  const candidates = problems
+    .filter((p) => (
+      p.evidence_quote
+      && p.target_user
+    ))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, FREE_TIER_AI_LIMIT);
+
+  console.log('\n=== 🔎 저장된 항목의 근거 점검 ===\n');
+
+  if (candidates.length === 0) {
+    console.log('저장된 항목 중 원문 인용과 고객 정보가 모두 있는 항목이 없습니다. 규칙을 점검하세요.');
+    return;
+  }
+
+  candidates.forEach((p, i) => {
+    console.log(`${i + 1}. ${p.problem_summary}`);
+    console.log(`   고객: ${p.target_user}`);
+    console.log(`   원문 근거: “${p.evidence_quote}” (${p.evidence_type})`);
+    console.log(`   링크: ${p.source_url || '-'}`);
+    console.log(`   다음: 같은 고객·상황·임시방편의 독립 원문 2개를 직접 확인하세요.`);
+    if ((p.evidence_count || 1) > 1) {
+      console.log(`   참고: 이번 실행의 AI 유사군 ${p.evidence_count}건 — 아직 증거 ${p.evidence_count}개로 간주하지 않습니다.`);
+    }
+    console.log();
+  });
 }
 
 async function runTop() {
