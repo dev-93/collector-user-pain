@@ -35,6 +35,17 @@ class AIAnalyzer {
 
     const names = this._chain.map((p) => p.name).join(' → ');
     console.log(`🔀 AI 폴백 체인: ${names}`);
+
+    const missing = [
+      ['OPENROUTER_API_KEY', process.env.OPENROUTER_API_KEY],
+      ['GROQ_API_KEY', process.env.GROQ_API_KEY],
+      ['GEMINI_API_KEY', process.env.GEMINI_API_KEY],
+    ]
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+    if (missing.length > 0) {
+      console.log(`ℹ️  비활성 폴백: ${missing.join(', ')} 미설정`);
+    }
   }
 
   /**

@@ -10,7 +10,8 @@ export const AI_CONFIG = {
     baseUrl: 'https://api.groq.com/openai/v1',
   },
   gemini: {
-    model: 'gemini-2.0-flash',
+    // Gemini 2.0 Flash는 2026-06-01 종료됨. Google의 공식 대체 모델 사용.
+    model: 'gemini-3.6-flash',
   },
 };
 
