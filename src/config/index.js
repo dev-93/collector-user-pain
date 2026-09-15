@@ -78,16 +78,10 @@ export const PROBLEM_CATEGORIES = [
 
 // 점수 공식 가중치
 export const SCORE_WEIGHTS = {
-  frequency: 0.20,      // 빈도
-  pain: 0.20,           // 고통 정도
-  willingness_to_pay: 0.20,  // 지불 의사
-  market_size: 0.15,    // 시장 크기
-  competition_gap: 0.10, // 경쟁 기회
-  my_fit: 0.15,         // 내 해결 능력
+  frequency: 0.30,          // 반복성
+  pain: 0.35,               // 손실·지연·위험의 강도
+  willingness_to_pay: 0.35, // 지불 근거의 강도
 };
-
-// 개발 난이도는 별도 감점으로 계산한다. 모든 점수는 최종적으로 0~100으로 정규화한다.
-export const DEVELOPMENT_PENALTY_WEIGHT = 0.10;
 
 // 나의 역량 정의 (AI 적합도 판단용 — 특정 도메인 편향 없이 범용적 문제 해결력 중심)
 export const MY_WEAPONS = {

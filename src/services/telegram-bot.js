@@ -332,9 +332,9 @@ function formatProblemDetail(problem) {
   text += `대상: ${problem.target_user || '?'}\n`;
   text += `상황: ${problem.context || '?'}\n\n`;
   text += `빈도: ${problem.frequency}/10 | 고통: ${problem.pain}/10 | 지불의사: ${problem.willingness_to_pay}/10\n`;
-  text += `시장성: ${problem.market_size}/10 | 경쟁기회: ${problem.competition_gap}/10 | 내 적합도: ${problem.my_fit}/10\n\n`;
+  text += `비용 부담자: ${problem.cost_bearer || '미확인'}\n`;
+  text += `가능한 지불 주체: ${problem.potential_payer || '미확인'}\n\n`;
   text += `*종합 점수: ${problem.score}점*`;
-  if (problem.mvp_idea) text += `\n\n💡 MVP 아이디어: ${problem.mvp_idea}`;
   return text;
 }
 

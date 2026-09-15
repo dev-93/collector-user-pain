@@ -16,7 +16,6 @@ import {
   AI_CONFIG,
   MIN_SCORE,
   SCORE_WEIGHTS,
-  DEVELOPMENT_PENALTY_WEIGHT,
   FREE_TIER_AI_LIMIT,
 } from '../config/index.js';
 
@@ -361,19 +360,13 @@ class AIAnalyzer {
       problem_category: '기타',
       current_solution: null,
       solution_gap: null,
-      competitors: null,
       frequency: null,
       pain: null,
       willingness_to_pay: null,
-      market_size: null,
-      competition_gap: null,
-      my_fit: null,
-      development_difficulty: null,
       score: null,
       rule_score: c.preScore || 0,
       analysis_status: 'rule_only',
       is_estimated: true,
-      mvp_idea: null,
       skip_reason: 'AI 한도 초과로 규칙 점수 사용',
       source: c.source,
       source_url: c.source_url,
@@ -501,8 +494,7 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// 모델이 임의로 작성한 score를 신뢰하지 않고, 구조화된 1~10 필드로 재계산한다.
-// 양의 항목은 0~100으로 정규화하고 개발 난이도는 최대 10점 감점한다.
+// 모델이 임의로 작성한 score를 신뢰하지 않고, 수집 단계의 핵심 근거 점수만으로 재계산한다.
 function calculateScore(result) {
   const value = (key) => {
     const n = Number(result?.[key]);
@@ -510,8 +502,7 @@ function calculateScore(result) {
   };
   const positive = Object.entries(SCORE_WEIGHTS)
     .reduce((sum, [key, weight]) => sum + value(key) * weight, 0) * 10;
-  const penalty = value('development_difficulty') * DEVELOPMENT_PENALTY_WEIGHT;
-  return Math.round(Math.max(0, Math.min(100, positive - penalty)));
+  return Math.round(Math.max(0, Math.min(100, positive)));
 }
 
 export default AIAnalyzer;

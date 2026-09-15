@@ -230,11 +230,12 @@ function buildProblemBlocks(problem) {
   addParagraph('문제군', problem.problem_group);
   addParagraph('현재 해결 방식', problem.current_solution);
   addParagraph('해결 공백', problem.solution_gap);
+  addParagraph('비용을 떠안는 역할', problem.cost_bearer);
+  addParagraph('가능한 지불 주체', problem.potential_payer);
   addParagraph('근거 부족', problem.evidence_gaps?.join(' / '));
 
   addHeading('검증');
   addParagraph('검증 질문', problem.validation_question);
-  addParagraph('수동 제안', problem.validation_offer);
   addParagraph('다음 검증 실험', problem.next_validation_experiment);
 
   return blocks;
