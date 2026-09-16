@@ -21,20 +21,20 @@ async function createValidationDB() {
     icon: { type: 'emoji', emoji: '🧪' },
     is_inline: true,
     properties: {
-      // 1. 실험명 / 가설
-      name: {
+      // 1. 실험명
+      '실험명': {
         title: {},
       },
       // 2. 연결된 문제 (Problem DB와 Relation)
-      problem: {
+      '문제': {
         relation: {
           database_id: PROBLEM_DB_ID,
           type: 'single_property',
           single_property: {},
         },
       },
-      // 3. 검증 방법론 (Method)
-      method: {
+      // 3. 검증 방법론
+      '실험 방법': {
         select: {
           options: [
             { name: '1. 커뮤니티 나눔 테스트 (블라인드/카페)', color: 'blue' },
@@ -45,8 +45,8 @@ async function createValidationDB() {
           ],
         },
       },
-      // 4. 검증 채널 (Channel)
-      channel: {
+      // 4. 검증 채널
+      '채널': {
         select: {
           options: [
             { name: '블라인드', color: 'red' },
@@ -59,8 +59,8 @@ async function createValidationDB() {
           ],
         },
       },
-      // 5. 검증 진행 상태 (Status)
-      status: {
+      // 5. 진행 상태
+      '상태': {
         status: {
           options: [
             { name: '가설 수립', color: 'gray' },
@@ -71,21 +71,29 @@ async function createValidationDB() {
           ],
         },
       },
-      // 6. 목표 검증 지표 (Target Metric)
-      target_metric: {
+      // 6. 성공 기준
+      '성공 기준': {
         rich_text: {},
       },
-      // 7. 실제 달성 결과 (Actual Result)
-      actual_result: {
+      // 7. 실제 결과
+      '실제 결과': {
         rich_text: {},
       },
-      // 8. 배운 점 & 회고 (Learning & Decision)
-      learnings: {
+      // 8. 학습 및 회고
+      '학습': {
         rich_text: {},
       },
       // 9. 실험 시작일
-      start_date: {
+      '시작일': {
         date: {},
+      },
+      // 10. 검증 진입 이유 (왜 수집함에서 여기까지 올라왔는가)
+      '검증 진입 이유': {
+        rich_text: {},
+      },
+      // 11. 비용 부담자 (이 문제가 지속될 때 실제 시간·돈을 부담하는 주체)
+      '비용 부담자': {
+        rich_text: {},
       },
     },
   });
@@ -132,14 +140,14 @@ async function seedPlaybookTemplates(dbId) {
     await notion.pages.create({
       parent: { database_id: dbId },
       properties: {
-        name: { title: [{ text: { content: t.name } }] },
-        method: { select: { name: t.method } },
-        channel: { select: { name: t.channel } },
-        status: { status: { name: t.status } },
-        target_metric: { rich_text: [{ text: { content: t.target_metric } }] },
-        actual_result: { rich_text: [{ text: { content: t.actual_result } }] },
-        learnings: { rich_text: [{ text: { content: t.learnings } }] },
-        start_date: { date: { start: new Date().toISOString().split('T')[0] } },
+        '실험명': { title: [{ text: { content: t.name } }] },
+        '실험 방법': { select: { name: t.method } },
+        '채널': { select: { name: t.channel } },
+        '상태': { status: { name: t.status } },
+        '성공 기준': { rich_text: [{ text: { content: t.target_metric } }] },
+        '실제 결과': { rich_text: [{ text: { content: t.actual_result } }] },
+        '학습': { rich_text: [{ text: { content: t.learnings } }] },
+        '시작일': { date: { start: new Date().toISOString().split('T')[0] } },
       },
     });
   }

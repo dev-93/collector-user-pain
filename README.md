@@ -154,6 +154,37 @@ npm run setup:notion
 
 ---
 
+## 검증 실험실 구조
+
+수집함에서 독립 원문 3개(또는 현재 지출·반복 행동 + 접근 가능한 고객)가 확인된 문제만
+검증 실험실로 올린다. 한 번에 검증 후보는 최대 1개만 운영한다.
+
+| 컬럼 | 설명 |
+|------|------|
+| `name` | 실험명 / 가설 |
+| `problem` | 문제 수집함 Relation |
+| `status` | 가설 수립 / 실험 진행중 / Go / Pivot / Kill |
+| `validation_reason` | **검증 진입 이유** — 왜 수집함에서 여기까지 올라왔는가 (한두 문장) |
+| `payer` | **비용 부담자** — 이 문제가 지속될 때 실제 시간·돈을 부담하는 주체 |
+| `method` | 검증 방법론 (플레이북 1~4 중 선택) |
+| `channel` | 실험 채널 |
+| `start_date` | 실험 시작일 |
+| `target_metric` | 성공 기준 |
+| `actual_result` | 실제 결과 |
+| `learnings` | 학습 및 회고 |
+
+`validation_reason`과 `payer`는 DB 테이블에서 바로 읽힐 때 가치가 있다.
+가장 위험한 가설(riskiest assumption)처럼 상세한 사고 과정은 각 실험 페이지 본문에 기록한다.
+
+**검증 흐름:**
+```
+문제 → 왜 검증하는가(validation_reason) → 누가 비용을 부담하는가(payer)
+→ 어떻게 실험하는가(method/channel) → 성공 기준(target_metric)
+→ 실제 결과(actual_result) → 학습(learnings) → Go / Pivot / Kill
+```
+
+---
+
 ## 수집 소스 추가 방법
 
 기본 `npm run collect`는 지식iN 질문 원문만 사용한다. 뉴스와 일반 블로그는 시장 맥락을
@@ -216,16 +247,22 @@ problem-radar/
 ├── src/
 │   ├── index.js                 # 메인 엔트리포인트
 │   ├── config/
-│   │   └── index.js             # 설정 (키워드, 점수 가중치, 나의 역량)
+│   │   ├── index.js             # 설정 (키워드, 점수 가중치, 나의 역량)
+│   │   └── validation-playbooks.js  # 검증 방법론 플레이북 4종
 │   ├── collectors/
 │   │   ├── naver-kin.js         # 네이버 지식iN + 블로그 수집기
 │   │   └── app-reviews.js       # 구글플레이 + 앱스토어 수집기
 │   ├── services/
 │   │   ├── ai-analyzer.js       # Gemini AI 분석 엔진
-│   │   ├── notion-service.js    # Notion DB 저장/조회
+│   │   ├── notion-service.js    # Notion 문제 수집함 DB 저장/조회
+│   │   ├── validation-service.js  # 검증 실험실 DB 저장/조회
 │   │   └── telegram-bot.js      # Telegram 봇 인터페이스
-│   └── prompts/
-│       └── analyze.js           # AI 분석 프롬프트
+│   ├── prompts/
+│   │   └── analyze.js           # AI 분석 프롬프트
+│   └── utils/
+│       ├── pre-filter.js        # 수집 전 사전 필터
+│       └── problem-cluster.js   # 문제 군집화 유틸
 └── scripts/
-    └── setup-notion.js          # Notion DB 초기화
+    ├── setup-notion.js          # 문제 수집함 Notion DB 초기화
+    └── setup-validation-db.js   # 검증 실험실 Notion DB 초기화
 ```

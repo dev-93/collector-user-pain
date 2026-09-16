@@ -39,36 +39,44 @@ class ValidationService {
     const hypothesisName = `[${playbook.name.split('.')[0].trim()}] ${problem.problem_summary || '문제 검증'}`;
 
     const props = {
-      name: {
+      '실험명': {
         title: [{ text: { content: hypothesisName } }],
       },
-      method: {
+      '실험 방법': {
         select: { name: playbook.name },
       },
-      channel: {
+      '채널': {
         select: { name: playbook.channel.split('/')[0].trim() },
       },
-      status: {
+      '상태': {
         status: { name: '가설 수립' },
       },
-      target_metric: {
+      '성공 기준': {
         rich_text: [{ text: { content: playbook.passCriteria } }],
       },
-      learnings: {
+      '학습': {
         rich_text: [{
           text: {
             content: `📋 실행 가이드:\n${playbook.actionSteps.join('\n')}\n\n⏱ 예상 소요: ${playbook.duration}`,
           },
         }],
       },
-      start_date: {
+      '시작일': {
         date: { start: new Date().toISOString().split('T')[0] },
+      },
+      // 검증 진입 이유: 왜 수집함에서 검증 실험실로 올라왔는가
+      '검증 진입 이유': {
+        rich_text: [{ text: { content: problem.validation_reason || '' } }],
+      },
+      // 비용 부담자: 이 문제가 지속될 때 실제 시간·돈을 부담하는 주체
+      '비용 부담자': {
+        rich_text: [{ text: { content: problem.payer || '' } }],
       },
     };
 
     // Problem DB Relation 연결
     if (problem.id && this.problemDbId) {
-      props.problem = {
+      props['문제'] = {
         relation: [{ id: problem.id }],
       };
     }
@@ -103,14 +111,14 @@ class ValidationService {
    */
   async updateResult(pageId, result) {
     const props = {};
-    if (result.status) props.status = { status: { name: result.status } };
+    if (result.status) props['상태'] = { status: { name: result.status } };
     if (result.actualResult) {
-      props.actual_result = {
+      props['실제 결과'] = {
         rich_text: [{ text: { content: result.actualResult } }],
       };
     }
     if (result.learnings) {
-      props.learnings = {
+      props['학습'] = {
         rich_text: [{ text: { content: result.learnings } }],
       };
     }
@@ -125,11 +133,11 @@ class ValidationService {
       database_id: this.validationDbId,
       filter: {
         or: [
-          { property: 'status', status: { equals: '가설 수립' } },
-          { property: 'status', status: { equals: '실험 진행중' } },
+          { property: '상태', status: { equals: '가설 수립' } },
+          { property: '상태', status: { equals: '실험 진행중' } },
         ],
       },
-      sorts: [{ property: 'start_date', direction: 'descending' }],
+      sorts: [{ property: '시작일', direction: 'descending' }],
     });
     return response.results.map(extractValidationFromPage);
   }
@@ -207,14 +215,16 @@ function extractValidationFromPage(page) {
   return {
     id: page.id,
     notion_url: page.url,
-    name: get('name', 'title'),
-    method: get('method', 'select'),
-    channel: get('channel', 'select'),
-    status: get('status', 'status'),
-    target_metric: get('target_metric', 'rich_text'),
-    actual_result: get('actual_result', 'rich_text'),
-    learnings: get('learnings', 'rich_text'),
-    start_date: get('start_date', 'date'),
+    name: get('실험명', 'title'),
+    method: get('실험 방법', 'select'),
+    channel: get('채널', 'select'),
+    status: get('상태', 'status'),
+    target_metric: get('성공 기준', 'rich_text'),
+    actual_result: get('실제 결과', 'rich_text'),
+    learnings: get('학습', 'rich_text'),
+    start_date: get('시작일', 'date'),
+    validation_reason: get('검증 진입 이유', 'rich_text'),
+    payer: get('비용 부담자', 'rich_text'),
   };
 }
 
