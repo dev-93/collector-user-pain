@@ -8,7 +8,6 @@
  *   - 노이즈 패턴 포함 시 즉시 제외
  *   - 불평 신호 개수 (가장 강한 지표)
  *   - 텍스트 길이 / 질문 형태
- *   - 출처 신뢰도 (지식iN > 구글 뉴스)
  */
 
 import { COMPLAINT_SIGNALS } from '../config/index.js';
@@ -60,9 +59,8 @@ function calcPreScore(candidate) {
   // 노이즈 패턴 포함 시 즉시 제외
   if (NOISE_PATTERNS.some((p) => fullText.includes(p))) return 0;
 
-  // 최소 길이 (너무 짧으면 정보 없음) — 구글 뉴스 제목만 있는 경우 20자로 완화
-  const minLen = candidate.source?.includes('구글 뉴스') || candidate.source?.includes('지식iN') ? 20 : 30;
-  if (text.length < minLen) return 0;
+  // 최소 길이 (너무 짧으면 정보 없음)
+  if (text.length < 30) return 0;
 
   let score = 0;
 
@@ -84,14 +82,6 @@ function calcPreScore(candidate) {
   // 텍스트 길이 보너스
   if (text.length > 100) score += 5;
   if (text.length > 200) score += 5;
-
-  // 출처 보너스 (지식iN은 실제 질문 = 신뢰도 높음)
-  if (candidate.source?.includes('지식iN')) score += 15;
-  // 앱리뷰는 실사용자 불만 = 신뢰도 높음
-  if (candidate.source?.includes('앱 리뷰') || candidate.source?.includes('App Review')) score += 10;
-
-  // 지식iN/뉴스의 일반 질문은 사업 신호가 없으면 AI 후보로 보내지 않는다.
-  if (candidate.source?.includes('지식iN') && signalCount === 0 && highValueCount === 0) return 0;
 
   return Math.min(score, 100);
 }
@@ -129,7 +119,7 @@ export function preFilter(candidates, options = {}) {
     console.log(`   유사 중복 제거: ${total - afterDedup}건 → ${afterDedup}건`);
     console.log(`   점수 미달 제거: ${afterDedup - afterScore}건 (sPreScore < ${minPreScore})`);
     console.log(`   상위 제한:     최대 ${maxCount}건`);
-    console.log(`   ✅ AI 분석 대상: ${scored.length}건 (Gemini ${scored.length}회 호출)`);
+    console.log(`   ✅ AI 분석 후보: ${scored.length}건 (실제 AI 호출: 최대 1회 배치)`);
     const saved = total - scored.length;
     console.log(`   💰 토큰 절감:  ${saved}건 생략 (약 ${Math.round(saved * 1.5)}초 단축)\n`);
   }

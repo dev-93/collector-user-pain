@@ -26,8 +26,8 @@ class NotionService {
    * @returns {Object} 생성된 Notion 페이지
    */
   async saveProblem(problem) {
-    // 원문 단위 ID로 중복을 막는다. 앱 리뷰는 앱 상세 URL이 같으므로 URL만
-    // 기준으로 삼으면 같은 앱의 여러 리뷰가 모두 사라진다.
+    // 원문 단위 ID로 중복을 막는다. 서로 다른 원문이 같은 URL을 쓸 수 있어 URL만
+    // 기준으로 삼으면 서로 다른 원문이 하나로 합쳐질 수 있다.
     const sourceItemId = problem.source_item_id || problem.source_url || hashText(problem.original_text);
     if (sourceItemId) {
       const existing = await this.findBySourceItemId(sourceItemId);
@@ -228,6 +228,7 @@ function buildProblemBlocks(problem) {
   addParagraph('카테고리', problem.problem_category);
   addParagraph('신뢰도', problem.confidence);
   addParagraph('문제군', problem.problem_group);
+  addParagraph('유사 후보 수', problem.similar_candidate_count);
   addParagraph('현재 해결 방식', problem.current_solution);
   addParagraph('해결 공백', problem.solution_gap);
   addParagraph('비용을 떠안는 역할', problem.cost_bearer);

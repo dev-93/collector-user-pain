@@ -227,6 +227,7 @@ class AIAnalyzer {
         source: candidate.source,
         source_url: candidate.source_url,
         source_item_id: candidate.source_item_id,
+        source_evidence_state: candidate.evidence_state || 'unverified',
         original_text: candidate.original_text,
         collected_at: candidate.collected_at || new Date().toISOString(),
         status: score >= MIN_SCORE ? '수집됨' : '기각',
@@ -266,6 +267,7 @@ class AIAnalyzer {
           source: candidate.source,
           source_url: candidate.source_url,
           source_item_id: candidate.source_item_id,
+          source_evidence_state: candidate.evidence_state || 'unverified',
           original_text: candidate.original_text,
           collected_at: candidate.collected_at || new Date().toISOString(),
           status: score >= MIN_SCORE ? '수집됨' : '기각',
@@ -370,6 +372,7 @@ class AIAnalyzer {
       skip_reason: 'AI 한도 초과로 규칙 점수 사용',
       source: c.source,
       source_url: c.source_url,
+      source_evidence_state: c.evidence_state || 'unverified',
       original_text: c.original_text,
       collected_at: c.collected_at || new Date().toISOString(),
       status: '검토필요',
@@ -396,6 +399,7 @@ class AIAnalyzer {
       source_url: null,
       original_text: text,
       signals: [],
+      evidence_state: 'self_report',
       collected_at: new Date().toISOString(),
     };
     return this.analyze(candidate);
@@ -508,15 +512,16 @@ function calculateScore(result) {
 export default AIAnalyzer;
 
 // 직접 실행 시 테스트
-if (process.argv[1].endsWith('ai-analyzer.js')) {
+if (process.argv[1]?.endsWith('ai-analyzer.js')) {
   import('dotenv/config').then(async () => {
     const analyzer = new AIAnalyzer();
 
     const testCandidate = {
-      source: '네이버 지식iN',
-      source_url: 'https://kin.naver.com/test',
+      source: '직접 제보',
+      source_url: null,
       original_text: '[질문] 건강보험 환급금 신청 방법이 없나요?\n[내용] 매번 여러 사이트를 돌아다니면서 확인해야 하는데 너무 불편해요. 자동으로 알려주는 서비스가 없을까요?',
       signals: ['매번', '너무 불편', '방법이 없나'],
+      evidence_state: 'self_report',
       collected_at: new Date().toISOString(),
     };
 

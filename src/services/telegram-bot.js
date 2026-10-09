@@ -4,7 +4,7 @@
  *
  * 커맨드:
  *   /start     - 안내 메시지
- *   /collect   - 지금 즉시 수집 + 분석 실행
+ *   /collect   - 외부 자동 수집 비활성 안내
  *   /top       - TOP 10 문제 조회
  *   /today     - 오늘 수집된 문제 조회
  *   /why <번호> - 특정 문제 5 Why 분석
@@ -15,13 +15,9 @@
  */
 
 import TelegramBot from 'node-telegram-bot-api';
-import NaverCollector from '../collectors/naver-kin.js';
-import AppReviewCollector from '../collectors/app-reviews.js';
 import AIAnalyzer from './ai-analyzer.js';
 import NotionService from './notion-service.js';
 import { MIN_SCORE } from '../config/index.js';
-import { preFilter } from '../utils/pre-filter.js';
-import { clusterProblems } from '../utils/problem-cluster.js';
 
 const ALLOWED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
   ? Number(process.env.TELEGRAM_CHAT_ID)
@@ -109,68 +105,11 @@ class ProblemRadarBot {
 
   // /collect 핸들러
   async _handleCollect(chatId) {
-    await this.bot.sendMessage(chatId, '🔍 수집 시작...\n네이버 지식iN + 앱 리뷰를 가져옵니다.');
-
-    try {
-      // 1. 수집
-      const naverCollector = new NaverCollector();
-      const appCollector = new AppReviewCollector();
-
-      const [naverResults, appResults] = await Promise.allSettled([
-        naverCollector.collect(),
-        appCollector.collect(),
-      ]);
-
-      const candidates = [
-        ...(naverResults.status === 'fulfilled' ? naverResults.value : []),
-        ...(appResults.status === 'fulfilled' ? appResults.value : []),
-      ];
-
-      const filtered = preFilter(candidates, { minPreScore: 40, maxCount: 30, verbose: false });
-      await this.bot.sendMessage(
-        chatId,
-        `📦 수집 완료: ${candidates.length}건\n🔬 사전 필터 통과: ${filtered.length}건\n🤖 AI 분석 중...`
-      );
-
-      if (candidates.length === 0) {
-        await this.bot.sendMessage(chatId, '⚠️ 수집된 항목이 없습니다. 설정을 확인하세요.');
-        return;
-      }
-
-      // 2. AI 분석
-      const minScore = MIN_SCORE;
-      const analyzed = clusterProblems(await this.analyzer.analyzeAll(filtered, { minScore }));
-
-      // 3. Notion 저장
-      const { saved } = await this.notion.saveAll(analyzed, minScore);
-
-      // 4. TOP 5 결과 전송
-      const top5 = analyzed
-        .filter((p) => p.score >= minScore)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5);
-
-      this._lastTopResults = top5;
-
-      let message = `✅ *수집 완료*\n\n`;
-      message += `전체 ${candidates.length}건 수집\n`;
-      message += `AI 분석 ${analyzed.length}건\n`;
-      message += `Notion 저장 ${saved}건\n\n`;
-
-      if (top5.length > 0) {
-        message += `*🔥 오늘 발견한 TOP ${top5.length} 문제*\n\n`;
-        top5.forEach((p, i) => {
-          message += formatProblemShort(i + 1, p);
-        });
-        message += `\n/why <번호> 로 5 Why 분석 가능`;
-      } else {
-        message += `점수 ${minScore}+ 문제가 없었습니다.`;
-      }
-
-      await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    } catch (err) {
-      await this.bot.sendMessage(chatId, `❌ 오류: ${err.message}`);
-    }
+    await this.bot.sendMessage(
+      chatId,
+      '⏸️ 외부 자동 수집은 비활성화되어 있습니다.\n\n확인한 원문·관찰을 `[문제]` 또는 `[제보]`로 직접 보내면 AI가 가설로 정리합니다.',
+      { parse_mode: 'Markdown' }
+    );
   }
 
   // /top 핸들러
@@ -182,7 +121,7 @@ class ProblemRadarBot {
       this._lastTopResults = problems;
 
       if (problems.length === 0) {
-        await this.bot.sendMessage(chatId, '저장된 문제가 없습니다. /collect 를 먼저 실행하세요.');
+        await this.bot.sendMessage(chatId, '저장된 문제가 없습니다. [문제] 또는 [제보]로 직접 기록해 주세요.');
         return;
       }
 
@@ -226,7 +165,7 @@ class ProblemRadarBot {
     if (!problem) {
       await this.bot.sendMessage(
         chatId,
-        `번호 ${index}를 찾을 수 없습니다.\n먼저 /top 또는 /collect 를 실행하세요.`
+        `번호 ${index}를 찾을 수 없습니다.\n먼저 /top을 조회하거나 [문제]로 직접 기록하세요.`
       );
       return;
     }
@@ -267,7 +206,6 @@ class ProblemRadarBot {
       'Gemini API': !!process.env.GEMINI_API_KEY,
       'Notion Token': !!process.env.NOTION_TOKEN,
       'Notion Problem DB': !!process.env.NOTION_PROBLEM_DB_ID,
-      '네이버 API': !!(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET),
       'Telegram Bot': !!process.env.TELEGRAM_BOT_TOKEN,
     };
 
@@ -278,7 +216,7 @@ class ProblemRadarBot {
 
     message += `\n*설정값*\n`;
     message += `최소 점수: ${process.env.MIN_SCORE || 50}\n`;
-    message += `수집 앱 수: ${process.env.APP_TARGETS_COUNT || '기본 3개'}\n`;
+    message += `수집 경로: Telegram 직접 제보\n`;
 
     await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
   }
@@ -344,7 +282,7 @@ const HELP_TEXT = `
 한국 사용자들의 반복되는 불평에서 사업 기회를 찾습니다.
 
 *커맨드*
-/collect — 지금 즉시 수집 + 분석 실행
+/collect — 외부 자동 수집 비활성 안내
 /top [N] — TOP N 문제 조회 (기본 10)
 /today — 오늘 수집된 문제
 /why <번호> — 5 Why 깊이 분석
@@ -360,7 +298,7 @@ const HELP_TEXT = `
 export default ProblemRadarBot;
 
 // 직접 실행 시
-if (process.argv[1].endsWith('telegram-bot.js')) {
+if (process.argv[1]?.endsWith('telegram-bot.js')) {
   import('dotenv/config').then(() => {
     new ProblemRadarBot();
   });

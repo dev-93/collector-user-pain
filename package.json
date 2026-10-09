@@ -7,8 +7,6 @@
   "scripts": {
     "start": "node src/index.js",
     "collect": "node --env-file=.env src/index.js --collect",
-    "collect:naver": "node --env-file=.env src/collectors/naver-kin.js",
-    "collect:apps": "node --env-file=.env src/collectors/app-reviews.js",
     "top": "node --env-file=.env src/index.js --top",
     "validate": "node --env-file=.env src/index.js --validate",
     "valstat": "node --env-file=.env src/index.js --valstat",
@@ -23,12 +21,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@notionhq/client": "^2.2.15",
-    "axios": "^1.7.9",
-    "cheerio": "^1.1.2",
     "dotenv": "^16.4.7",
-    "google-play-scraper": "^9.1.1",
-    "app-store-scraper": "^0.18.0",
-    "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0"
   },
   "author": "Taenami",

@@ -52,8 +52,10 @@ export function clusterProblems(problems) {
     return group.items.map((problem) => ({
       ...problem,
       problem_group: groupName,
-      evidence_count: group.items.length,
+      // AI 유사군은 독립 원문·사건의 증거 수가 아니다. 이 필드는 사람이 직접
+      // 원문을 판독했을 때만 늘릴 수 있으므로 자동 수집에서는 0으로 둔다.
+      evidence_count: 0,
+      similar_candidate_count: group.items.length,
     }));
   });
 }
-

@@ -47,11 +47,12 @@ ${weaponSummary}
 
 export function buildAnalysisPrompt(candidate) {
   return `
-다음 원문을 분석해서 JSON으로만 응답하라. 마크다운 코드블록 없이 순수 JSON만.
+다음 수집 자료를 분석해서 JSON으로만 응답하라. 마크다운 코드블록 없이 순수 JSON만.
 
-[원문]
+[수집 자료]
 출처: ${candidate.source}
 URL: ${candidate.source_url}
+자료 상태: ${candidate.evidence_state || 'unverified'}
 텍스트:
 ${candidate.original_text}
 ${candidate.signals?.length ? `\n감지된 불평 신호: ${candidate.signals.join(', ')}` : ''}
@@ -90,6 +91,7 @@ ${candidate.signals?.length ? `\n감지된 불평 신호: ${candidate.signals.jo
 - frequency, willingness_to_pay는 원문에 근거가 없으면 낮게 평가하고 evidence_gaps에 이유를 적는다
 - 불편을 겪는 사람과 비용을 떠안거나 결제할 사람이 다를 수 있다. 각각을 구분한다. 무료 앱·사람의 도움·기존 서비스가 충분한 대안이면 개인의 지불의사를 높게 추정하지 않는다
 - 개인의 증상, 사고, 법률·금융 문의 자체는 사업 문제로 간주하지 않는다. 반복 업무나 지불 행동이 명시되지 않으면 낮은 점수를 준다
+- 자료 상태가 별도로 검증됐다는 정보는 없다. 원문에 없는 빈도·지불 의사·비용 부담 사실을 만들지 마라.
 `;
 }
 
@@ -104,6 +106,7 @@ export function buildBatchAnalysisPrompt(candidates) {
 --- [${i}] ---
 출처: ${c.source}
 URL: ${c.source_url || 'N/A'}
+자료 상태: ${c.evidence_state || 'unverified'}
 텍스트: ${c.original_text.slice(0, 400)}
 ${c.signals?.length ? `불평 신호: ${c.signals.join(', ')}` : ''}
 `.trim())
@@ -146,6 +149,7 @@ ${items}
 - 정보가 부족하면 is_estimated: true + 보수적 점수
 - 개인의 증상, 사고, 법률·금융 문의 자체는 사업 문제로 간주하지 않는다. 반복 업무나 지불 행동이 없으면 보수적으로 평가
 - 불편을 겪는 사람과 비용을 떠안거나 결제할 사람이 다를 수 있다. 각각을 구분한다. 무료 앱·사람의 도움·기존 서비스가 충분한 대안이면 개인의 지불의사를 높게 추정하지 않는다
+- 자료 상태가 별도로 검증됐다는 정보는 없다. 원문에 없는 빈도·지불 의사·비용 부담 사실을 만들지 마라.
 - 반드시 ${candidates.length}개 원소를 가진 배열로만 응답
 `;
 }
