@@ -103,7 +103,11 @@ class ProblemRadarBot {
     });
 
     bot.on('polling_error', (err) => {
-      console.error('Telegram 폴링 실패 — 연결 설정을 확인하세요.');
+      const status = Number(err.response?.statusCode || err.response?.body?.error_code);
+      const safeStatus = Number.isInteger(status) && status >= 400 && status <= 599 ? status : 'unknown';
+      console.error(`Telegram 폴링 실패 (HTTP ${safeStatus}) — 연결 설정을 확인하세요.`);
+      // 잘못된 토큰을 계속 호출하지 않는다. 응답 원문/URL은 자격 증명 보호를 위해 기록하지 않는다.
+      if (status === 401) bot.stopPolling().catch(() => {});
     });
   }
 
