@@ -18,6 +18,7 @@ import {
   SCORE_WEIGHTS,
   FREE_TIER_AI_LIMIT,
 } from '../config/index.js';
+import { inspectCandidate, analysisDisposition, sourceIdentity, restrictedSource } from '../utils/candidate-policy.js';
 
 // 배치 크기: 한 번의 API 호출로 처리할 최대 건수
 const BATCH_SIZE = 10;
@@ -113,8 +114,12 @@ class AIAnalyzer {
    * OpenRouter API 호출 (OpenAI 호환)
    */
   async _openrouterGenerate(prompt) {
+    this.usage ??= { requests: [] };
+    const attempt = { provider: 'OpenRouter', model: AI_CONFIG.openrouter.model, status: 'started' };
+    this.usage.requests.push(attempt);
     const response = await fetch(`${AI_CONFIG.openrouter.baseUrl}/chat/completions`, {
       method: 'POST',
+      signal: AbortSignal.timeout(45000),
       headers: {
         'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
@@ -130,11 +135,11 @@ class AIAnalyzer {
         temperature: 0.3,
       }),
     });
+    attempt.status = response.status;
 
     if (!response.ok) {
-      const errText = await response.text();
-      if (response.status === 429) throw new QuotaExceededError(`OpenRouter 한도 초과: ${errText}`);
-      throw new Error(`OpenRouter API 오류 ${response.status}: ${errText}`);
+      if (response.status === 429) throw new QuotaExceededError('OpenRouter 한도 초과');
+      throw new Error(`OpenRouter API 오류 ${response.status}`);
     }
 
     const data = await response.json();
@@ -154,8 +159,12 @@ class AIAnalyzer {
 
     let lastErr;
     for (const model of models) {
+      this.usage ??= { requests: [] };
+      const attempt = { provider: 'Groq', model, status: 'started' };
+      this.usage.requests.push(attempt);
       const response = await fetch(`${AI_CONFIG.groq.baseUrl}/chat/completions`, {
         method: 'POST',
+        signal: AbortSignal.timeout(45000),
         headers: {
           'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
           'Content-Type': 'application/json',
@@ -169,24 +178,24 @@ class AIAnalyzer {
           temperature: 0.3,
         }),
       });
+      attempt.status = response.status;
 
       if (response.ok) {
         const data = await response.json();
         return data.choices?.[0]?.message?.content?.trim() || '';
       }
 
-      const errText = await response.text();
       if (response.status === 429) {
-        throw new QuotaExceededError(`Groq 한도 초과: ${errText}`);
+        throw new QuotaExceededError('Groq 한도 초과');
       }
       if (response.status === 404) {
         // 모델이 없거나 접근 불가 → 다음 모델 시도
         console.warn(`\n⚠️  Groq 모델 [${model}] 없음(404) — 다음 모델로 시도합니다.`);
-        lastErr = new Error(`Groq API 오류 ${response.status}: ${errText}`);
+        lastErr = new Error(`Groq API 오류 ${response.status}`);
         continue;
       }
       // 그 외 오류는 즉시 다음 provider로 폴백 (QuotaExceededError로 래핑)
-      throw new QuotaExceededError(`Groq 오류(${response.status}), 다음 provider로 전환: ${errText}`);
+      throw new QuotaExceededError(`Groq 오류(${response.status}), 다음 provider로 전환`);
     }
 
     // 모든 모델 실패 시 다음 provider로 폴백
@@ -200,7 +209,11 @@ class AIAnalyzer {
     if (!this._geminiModel) {
       throw new Error('Gemini 모델이 초기화되지 않았습니다.');
     }
-    const result = await this._geminiModel.generateContent(prompt);
+    this.usage ??= { requests: [] };
+    const attempt = { provider: 'Gemini', model: AI_CONFIG.gemini.model, status: 'started' };
+    this.usage.requests.push(attempt);
+    const result = await this._geminiModel.generateContent(prompt, { timeout: 45000 });
+    attempt.status = 'success';
     return result.response.text().trim();
   }
 
@@ -208,35 +221,24 @@ class AIAnalyzer {
    * 단일 candidate 분석
    */
   async analyze(candidate) {
+    if (!inspectCandidate(candidate).ai_allowed) return null;
     const prompt = buildAnalysisPrompt(candidate);
 
     try {
       const text = await this.generateText(prompt);
 
       const parsed = parseJSON(text);
-      if (!parsed) {
-        console.warn('⚠️  JSON 파싱 실패:', text.slice(0, 100));
+      if (!validAnalysis(parsed)) {
+        console.warn('⚠️  AI 응답 형식 불일치 — 원문을 추가 조사 후보로 보존합니다.');
         return null;
       }
 
-      const score = calculateScore(parsed);
-      return {
-        ...parsed,
-        score,
-        analysis_status: 'ai_analyzed',
-        source: candidate.source,
-        source_url: candidate.source_url,
-        source_item_id: candidate.source_item_id,
-        source_evidence_state: candidate.evidence_state || 'unverified',
-        original_text: candidate.original_text,
-        collected_at: candidate.collected_at || new Date().toISOString(),
-        status: score >= MIN_SCORE ? '수집됨' : '기각',
-      };
+      return materializeAnalysis(parsed, candidate);
     } catch (err) {
       if (err instanceof QuotaExceededError) throw err;
       const isQuotaExceeded = err.message?.includes('429');
       if (isQuotaExceeded) throw new QuotaExceededError(err.message);
-      console.error('❌ AI 분석 오류:', err.message);
+      console.error('❌ AI 분석 실패 — 원문 검토가 필요합니다.');
       return null;
     }
   }
@@ -245,39 +247,28 @@ class AIAnalyzer {
    * 배치 단위 분석 — BATCH_SIZE건을 1회 API 호출로 처리
    */
   async analyzeBatch(batch) {
+    if (batch.some((c) => !inspectCandidate(c).ai_allowed)) throw new Error('AI 전송이 허용되지 않은 원문입니다.');
     const prompt = buildBatchAnalysisPrompt(batch);
 
     try {
       const text = await this.generateText(prompt);
 
       const parsed = parseBatchJSON(text, batch.length);
-      if (!parsed) {
-        console.warn(`⚠️  배치 JSON 파싱 실패 (${batch.length}건) — 개별 분석으로 폴백`);
+      if (!parsed || !parsed.every((item, index) => validAnalysis(item) && item.input_index === index)) {
+        console.warn(`⚠️  배치 응답 개수/형식 불일치 (${batch.length}건) — 보류`);
         return null;
       }
 
       return parsed.map((item, i) => {
         const candidate = batch[i];
         if (!item) return null;
-        const score = calculateScore(item);
-        return {
-          ...item,
-          score,
-          analysis_status: 'ai_analyzed',
-          source: candidate.source,
-          source_url: candidate.source_url,
-          source_item_id: candidate.source_item_id,
-          source_evidence_state: candidate.evidence_state || 'unverified',
-          original_text: candidate.original_text,
-          collected_at: candidate.collected_at || new Date().toISOString(),
-          status: score >= MIN_SCORE ? '수집됨' : '기각',
-        };
+        return materializeAnalysis(item, candidate);
       });
     } catch (err) {
       if (err instanceof QuotaExceededError) throw err;
       const isQuotaExceeded = err.message?.includes('429');
       if (isQuotaExceeded) throw new QuotaExceededError(err.message);
-      console.error('❌ 배치 분석 오류:', err.message);
+      console.error('❌ 배치 분석 실패 — 원문 검토가 필요합니다.');
       return null;
     }
   }
@@ -295,7 +286,7 @@ class AIAnalyzer {
       aiLimit = requestedLimit,
       allowIndividualFallback = false,
     } = options;
-    const effectiveAiLimit = Math.min(aiLimit, FREE_TIER_AI_LIMIT);
+    const effectiveAiLimit = Math.max(0, Math.min(Number.isFinite(aiLimit) ? Math.floor(aiLimit) : FREE_TIER_AI_LIMIT, FREE_TIER_AI_LIMIT));
 
     const aiTargets = candidates.slice(0, effectiveAiLimit);
     const ruleTargets = candidates.slice(effectiveAiLimit);
@@ -372,6 +363,7 @@ class AIAnalyzer {
       skip_reason: 'AI 한도 초과로 규칙 점수 사용',
       source: c.source,
       source_url: c.source_url,
+      source_item_id: c.source_item_id || sourceIdentity(c),
       source_evidence_state: c.evidence_state || 'unverified',
       original_text: c.original_text,
       collected_at: c.collected_at || new Date().toISOString(),
@@ -380,12 +372,12 @@ class AIAnalyzer {
 
     const allResults = [...aiResults, ...ruleResults];
     const passed = allResults.filter((r) => r.score >= minScore);
-    const rejected = allResults.filter((r) => r.score < minScore);
+    const rejected = allResults.filter((r) => r.score != null && r.score < minScore);
 
     console.log(`\n✅ 분석 완료:`);
     console.log(`   AI 분석: ${aiResults.length}건 / 규칙 폴백: ${ruleResults.length}건`);
     console.log(`   점수 ${minScore}+ 통과: ${passed.length}건`);
-    console.log(`   낮은 점수 기각: ${rejected.length}건`);
+    console.log(`   낮은 점수 검토 보류: ${rejected.length}건 (자동 기각하지 않음)`);
 
     return allResults;
   }
@@ -409,6 +401,7 @@ class AIAnalyzer {
    * TOP 문제 5 Why 분석
    */
   async analyzeWhyChain(problem) {
+    if (restrictedSource(problem)) return null;
     const prompt = `
 다음 문제에 대해 "5 Why" 분석을 수행하라.
 각 "왜?"마다 한 단계씩 깊게 파고들어, 겉으로 보이는 불편 → 진짜 근본 문제를 찾아라.
@@ -439,7 +432,7 @@ JSON 형식으로만 응답:
       const text = await this.generateText(prompt);
       return parseJSON(text);
     } catch (err) {
-      console.error('❌ 5 Why 분석 오류:', err.message);
+      console.error('❌ 5 Why 분석 실패 — 원문과 연결 설정을 확인하세요.');
       return null;
     }
   }
@@ -464,7 +457,7 @@ function parseJSON(text) {
 }
 
 // 배치 응답 파싱 — JSON 배열 추출
-function parseBatchJSON(text, expectedCount) {
+export function parseBatchJSON(text, expectedCount) {
   try {
     const cleaned = text
       .replace(/^```json\s*/i, '')
@@ -473,14 +466,13 @@ function parseBatchJSON(text, expectedCount) {
       .trim();
     const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed) && parsed.length === expectedCount) return parsed;
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     return null;
   } catch {
     const match = text.match(/\[[\s\S]*\]/);
     if (match) {
       try {
         const parsed = JSON.parse(match[0]);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length === expectedCount) return parsed;
       } catch { return null; }
     }
     return null;
@@ -510,6 +502,35 @@ function calculateScore(result) {
 }
 
 export default AIAnalyzer;
+
+function validAnalysis(value) {
+  return value && !Array.isArray(value) && typeof value.problem_summary === 'string' && value.problem_summary.trim()
+    && ['frequency', 'pain', 'willingness_to_pay'].every((key) => typeof value[key] === 'number'
+      && Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 10)
+    && Array.isArray(value.evidence_gaps) && value.evidence_gaps.every((gap) => typeof gap === 'string');
+}
+
+export function materializeAnalysis(parsed, candidate) {
+  // AI가 내보낸 ID·사람 확인값·증거수·승격 상태는 받지 않는다.
+  const allowed = ['problem_summary', 'target_user', 'context', 'problem_category', 'current_solution',
+    'solution_gap', 'cost_bearer', 'potential_payer', 'evidence_quote', 'evidence_type', 'evidence_gaps',
+    'confidence', 'frequency', 'pain', 'willingness_to_pay', 'is_estimated', 'validation_question', 'skip_reason'];
+  const result = Object.fromEntries(allowed.filter((key) => key in parsed).map((key) => [key, parsed[key]]));
+  result.evidence_gaps = [...(result.evidence_gaps || [])];
+  if (typeof result.evidence_quote !== 'string' || !result.evidence_quote.trim()
+    || !candidate.original_text.includes(result.evidence_quote)) {
+    result.evidence_quote = null;
+    result.evidence_gaps.push('AI 인용을 원문에서 확인할 수 없음');
+  }
+  Object.assign(result, { score: calculateScore(result), analysis_status: 'ai_analyzed',
+    source: candidate.source, source_url: candidate.source_url, source_item_id: candidate.source_item_id || sourceIdentity(candidate),
+    source_evidence_state: candidate.evidence_state || 'unverified', original_text: candidate.original_text,
+    published_at: candidate.published_at, author_key: candidate.author_key, event_key: candidate.event_key,
+    original_verified: candidate.original_verified === true, date_verified: candidate.date_verified === true,
+    collected_at: candidate.collected_at || new Date().toISOString(), evidence_count: 0, status: '수집됨' });
+  result.review_disposition = analysisDisposition(result);
+  return result;
+}
 
 // 직접 실행 시 테스트
 if (process.argv[1]?.endsWith('ai-analyzer.js')) {

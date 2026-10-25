@@ -1,37 +1,11 @@
 /**
  * pre-filter.js
- * 규칙 기반 사전 필터 — Gemini API 호출 전 후보군을 대폭 줄인다
- *
- * 목적: 336건 → 최대 50건으로 압축 (토큰 85% 절감)
- *
- * 필터 기준:
- *   - 노이즈 패턴 포함 시 즉시 제외
- *   - 불평 신호 개수 (가장 강한 지표)
- *   - 텍스트 길이 / 질문 형태
+ * 기존 호출 호환용 정렬 유틸. 실제 수집 정책과 보류 사유는 collection-pipeline.js가 관리한다.
+ * 단어 포함 여부로 즉시 기각하지 않으며 점수는 정렬용 힌트다.
  */
 
 import { COMPLAINT_SIGNALS } from '../config/index.js';
-
-// 노이즈 패턴 (광고, 버그 리포트, 개인 일상 등 — 사업 기회 아님)
-const NOISE_PATTERNS = [
-  // 광고/홍보
-  '광고', '홍보', '이벤트', '무료로 드립니다', '모집합니다',
-  '구인', '구직', '채용', '제휴 문의', '협업 제안',
-  // 버그/앱 오류
-  '에러가 발생', '오류가 발생', '버그', 'crash', '앱이 안',
-  '업데이트 후', '최근 업데이트', '새 버전에서',
-  // 개인 의료/건강 질문 (사업 기회 아님)
-  '소양증', '부분파열', '근육통', '고환', '부정교합',
-  '진단', '증상이', '아픈데', '병원 다녀',
-  // 개인 고민/감정
-  '사는의미', '우울증인가', 'ENFP', 'MBTI', '성격유형',
-  '싸가지', '친구가', '남자친구', '여자친구', '남친', '여친',
-  '썸남', '썸녀', '연애',
-  // 후기/리뷰 (개인 구매 경험)
-  '내돈내산', '후기', '솔직리뷰', '사용기',
-  // 지역 정보
-  '구파발', '왕십리', '은평구',
-];
+import { sourceKeys } from './candidate-policy.js';
 
 // 고품질 불평 패턴 (이게 있으면 강한 사업 기회 신호)
 const HIGH_VALUE_PATTERNS = [
@@ -56,11 +30,11 @@ function calcPreScore(candidate) {
   const title = candidate.raw_title || '';
   const fullText = `${title} ${text}`;
 
-  // 노이즈 패턴 포함 시 즉시 제외
-  if (NOISE_PATTERNS.some((p) => fullText.includes(p))) return 0;
+  // 단어 하나가 아닌 사람이 기록한 글 유형으로 광고·운영자 자료를 분리한다.
+  if (['advertisement', 'operator', 'general', 'repost'].includes(candidate.record_type)) return 0;
 
   // 최소 길이 (너무 짧으면 정보 없음)
-  if (text.length < 30) return 0;
+  if (!text.trim()) return 0;
 
   let score = 0;
 
@@ -83,6 +57,8 @@ function calcPreScore(candidate) {
   if (text.length > 100) score += 5;
   if (text.length > 200) score += 5;
 
+  // 불평 표현 없이 서술된 운영 손실도 검토한다. 점수는 정렬용이다.
+  if (/손실|손해|취소|노쇼|폐기|미수금|정산|대기|매출|인건비|시간|비용/.test(fullText)) score += 30;
   return Math.min(score, 100);
 }
 
@@ -91,13 +67,13 @@ function calcPreScore(candidate) {
  *
  * @param {Array} candidates - 수집기 원본 결과
  * @param {Object} options
- * @param {number} options.minPreScore - 최소 사전 점수 (기본 40)
+ * @param {number} options.minPreScore - 최소 사전 점수 (기본 0; 수집 저장 기준이 아님)
  * @param {number} options.maxCount - 최대 통과 건수 (기본 50)
  * @param {boolean} options.verbose - 상세 로그 출력
  * @returns {Array} 필터링된 candidates
  */
 export function preFilter(candidates, options = {}) {
-  const { minPreScore = 40, maxCount = 50, verbose = true } = options;
+  const { minPreScore = 0, maxCount = 50, verbose = true } = options;
 
   const total = candidates.length;
 
@@ -106,6 +82,8 @@ export function preFilter(candidates, options = {}) {
 
   // 사전 점수 계산 후 정렬
   const scored = deduped
+    .filter((c) => typeof c.original_text === 'string' && c.original_text.trim()
+      && !['advertisement', 'operator', 'general', 'repost'].includes(c.record_type))
     .map((c) => ({ ...c, preScore: calcPreScore(c) }))
     .filter((c) => c.preScore >= minPreScore)
     .sort((a, b) => b.preScore - a.preScore)
@@ -120,26 +98,20 @@ export function preFilter(candidates, options = {}) {
     console.log(`   점수 미달 제거: ${afterDedup - afterScore}건 (sPreScore < ${minPreScore})`);
     console.log(`   상위 제한:     최대 ${maxCount}건`);
     console.log(`   ✅ AI 분석 후보: ${scored.length}건 (실제 AI 호출: 최대 1회 배치)`);
-    const saved = total - scored.length;
-    console.log(`   💰 토큰 절감:  ${saved}건 생략 (약 ${Math.round(saved * 1.5)}초 단축)\n`);
   }
 
   return scored;
 }
 
 /**
- * 유사 중복 제거 — 제목 앞 20자 기준
+ * 원문 식별자 기반 중복 제거. 제목은 중복 키가 아니다.
  */
 export function deduplicateSimilar(candidates) {
-  const seen = new Map();
+  const seen = new Set();
   return candidates.filter((c) => {
-    const key = (c.raw_title || c.original_text || '')
-      .toLowerCase()
-      .replace(/[^가-힣a-z0-9]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!key || seen.has(key)) return false;
-    seen.set(key, true);
+    const keys = sourceKeys(c);
+    if (!keys.length || keys.some((key) => seen.has(key))) return false;
+    keys.forEach((key) => seen.add(key));
     return true;
   });
 }

@@ -53,18 +53,7 @@ async function runBot() {
  * 점수 70+ 수집됨 상태의 문제를 Notion 검증 DB에 등록
  */
 async function runValidate() {
-  console.log('\n🧪 Problem Radar — 검증 가설 자동 생성\n');
-
-  const notion = new NotionService();
-  const validation = new ValidationService();
-
-  // TOP 20 문제 조회
-  const problems = await notion.getTopProblems(20);
-  console.log(`📋 조회된 문제: ${problems.length}건 (score 70+ 필터링 후 검증 가설 생성)`);
-
-  await validation.autoCreateFromProblems(problems, 5);
-
-  console.log('\n✅ 완료 — Notion 검증 실험실에서 확인하세요.');
+  console.log('⏸️ 자동 승격은 비활성화되었습니다. 원문 증거와 접근 경로를 확인하고 사용자가 1개를 선택합니다.');
 }
 
 /**
@@ -94,7 +83,7 @@ async function runValStat() {
       console.log(`     Notion: ${exp.notion_url}`);
     });
   } else {
-    console.log('\n진행 중인 실험이 없습니다. --validate 로 생성하세요.');
+    console.log('\n진행 중인 실험이 없습니다. 원문을 판독한 뒤 사용자가 검증 후보를 결정합니다.');
   }
 }
 

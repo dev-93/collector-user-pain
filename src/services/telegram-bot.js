@@ -17,7 +17,7 @@
 import TelegramBot from 'node-telegram-bot-api';
 import AIAnalyzer from './ai-analyzer.js';
 import NotionService from './notion-service.js';
-import { MIN_SCORE } from '../config/index.js';
+import { runCollection } from './collection-pipeline.js';
 
 const ALLOWED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
   ? Number(process.env.TELEGRAM_CHAT_ID)
@@ -28,6 +28,7 @@ class ProblemRadarBot {
     if (!process.env.TELEGRAM_BOT_TOKEN) {
       throw new Error('TELEGRAM_BOT_TOKEN이 .env에 없습니다.');
     }
+    if (!ALLOWED_CHAT_ID) throw new Error('TELEGRAM_CHAT_ID를 설정해야 제보를 받을 수 있습니다.');
 
     this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
     this.analyzer = new AIAnalyzer();
@@ -35,6 +36,7 @@ class ProblemRadarBot {
 
     // 마지막 TOP 조회 결과 캐시 (/why 커맨드용)
     this._lastTopResults = [];
+    this._reportQueue = Promise.resolve();
 
     this._registerHandlers();
     console.log('🤖 Telegram 봇 시작됨');
@@ -42,7 +44,7 @@ class ProblemRadarBot {
 
   // 채팅 ID 인증 체크
   isAllowed(chatId) {
-    if (!ALLOWED_CHAT_ID) return true; // 미설정이면 모두 허용
+    if (!ALLOWED_CHAT_ID) return false;
     return chatId === ALLOWED_CHAT_ID;
   }
 
@@ -94,12 +96,14 @@ class ProblemRadarBot {
       if (msg.text.startsWith('/')) return; // 커맨드 제외
 
       if (msg.text.startsWith('[문제]') || msg.text.startsWith('[제보]')) {
-        await this._handleDirectReport(msg.chat.id, msg.text);
+        this._reportQueue = this._reportQueue.then(() => this._handleDirectReport(msg.chat.id, msg.text)).catch(() => {
+          console.error('제보 처리 실패 — 내용과 자격 증명은 로그에 기록하지 않습니다.');
+        });
       }
     });
 
     bot.on('polling_error', (err) => {
-      console.error('Telegram 폴링 오류:', err.message);
+      console.error('Telegram 폴링 실패 — 연결 설정을 확인하세요.');
     });
   }
 
@@ -133,7 +137,7 @@ class ProblemRadarBot {
 
       await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
     } catch (err) {
-      await this.bot.sendMessage(chatId, `❌ 오류: ${err.message}`);
+      await this.bot.sendMessage(chatId, '❌ 처리에 실패했습니다. API 연결과 권한을 확인하세요.');
     }
   }
 
@@ -154,7 +158,7 @@ class ProblemRadarBot {
 
       await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
     } catch (err) {
-      await this.bot.sendMessage(chatId, `❌ 오류: ${err.message}`);
+      await this.bot.sendMessage(chatId, '❌ 처리에 실패했습니다. API 연결과 권한을 확인하세요.');
     }
   }
 
@@ -196,7 +200,7 @@ class ProblemRadarBot {
 
       await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
     } catch (err) {
-      await this.bot.sendMessage(chatId, `❌ 오류: ${err.message}`);
+      await this.bot.sendMessage(chatId, '❌ 처리에 실패했습니다. API 연결과 권한을 확인하세요.');
     }
   }
 
@@ -215,7 +219,7 @@ class ProblemRadarBot {
     }
 
     message += `\n*설정값*\n`;
-    message += `최소 점수: ${process.env.MIN_SCORE || 50}\n`;
+    message += `점수는 정렬 참고용이며 낮은 점수도 추가 조사 후보로 보존합니다.\n`;
     message += `수집 경로: Telegram 직접 제보\n`;
 
     await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
@@ -226,31 +230,25 @@ class ProblemRadarBot {
     await this.bot.sendMessage(chatId, '📝 제보 수신. AI 분석 중...');
 
     try {
-      const result = await this.analyzer.analyzeRawText(text);
-
-      if (!result) {
-        await this.bot.sendMessage(chatId, '❌ 분석에 실패했습니다.');
+      const existing = await this.notion.getAllProblems();
+      const report = await runCollection([{ source: '직접 제보', original_text: text,
+        evidence_state: 'self_report', collected_at: new Date().toISOString() }], { analyzer: this.analyzer, existing });
+      const record = report.records[0];
+      if (record.disposition === 'duplicate') {
+        await this.bot.sendMessage(chatId, '⏭️ 같은 원문이 이미 기록되어 있습니다.');
         return;
       }
-
-      const minScore = MIN_SCORE;
-
-      if (result.score >= minScore) {
-        await this.notion.saveProblem(result);
-        await this.bot.sendMessage(
-          chatId,
-          `✅ *저장 완료!*\n\n${formatProblemDetail(result)}`,
-          { parse_mode: 'Markdown' }
-        );
-      } else {
-        await this.bot.sendMessage(
-          chatId,
-          `⚠️ 점수 미달 (${result.score}점 / 기준 ${minScore}점)\n\n${formatProblemDetail(result)}\n\n_저장은 되지 않았습니다._`,
-          { parse_mode: 'Markdown' }
-        );
+      if (!record.analysis || record.plan.action === 'hold') {
+        await this.bot.sendMessage(chatId, `처리 보류: ${record.plan.reason || record.disposition}. Notion은 변경하지 않았습니다. 원본 메시지는 이 채팅에 남아 있습니다.`);
+        return;
       }
+      const saved = await this.notion.saveProblem(record.analysis);
+      const message = saved.review_required ? '🔎 기존 문제와 유사합니다. 독립 사건인지 확인한 후 증거 추가 여부를 결정하세요. 새 항목은 만들지 않았습니다.'
+        : saved.skipped ? '⏭️ 이미 저장된 원문입니다.'
+        : `✅ 수집함에 저장했습니다 (${record.disposition === 'needs_research' ? '추가 조사 후보' : '문제 가설'}). 점수는 수요의 증거가 아닙니다.\n${record.analysis.problem_summary}\n${saved.url || ''}`;
+      await this.bot.sendMessage(chatId, message);
     } catch (err) {
-      await this.bot.sendMessage(chatId, `❌ 오류: ${err.message}`);
+      await this.bot.sendMessage(chatId, '❌ 처리에 실패했습니다. API 연결과 권한을 확인하세요.');
     }
   }
 }

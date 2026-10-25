@@ -1,0 +1,10 @@
+[
+  {"source":"직접 제보","evidence_state":"self_report","raw_title":"광고 정산 후기","original_text":"광고비 30만원을 매달 지출하는 식당입니다. 정산 오류 때문에 매주 수작업으로 2시간을 쓰는 후기입니다."},
+  {"source":"직접 제보","evidence_state":"self_report","raw_title":"예약 취소","original_text":"단체예약 당일 취소로 준비한 재료를 폐기했고 식당의 손실을 떠안았습니다."},
+  {"source":"직접 제보","evidence_state":"self_report","raw_title":"예약 취소","original_text":"다른 가게를 운영합니다. 예약 취소로 인건비를 지급했지만 매출이 없었습니다."},
+  {"source":"직접 제보","evidence_state":"self_report","original_text":"매번 이렇게 수작업으로 엑셀로 매번 처리하니 너무 불편하다. 매달 직접 해야 번거롭고 시간이 너무 오래 걸립니다."},
+  {"source":"직접 제보","evidence_state":"self_report","original_text":"단체예약 당일 취소로 준비한 재료를 폐기했고 식당의 손실을 떠안았습니다."},
+  {"source":"합성 테스트","source_url":"https://example.org/post/ad","record_type":"advertisement","original_text":"대신 해주는 서비스 모집합니다. 무료 이벤트를 홍보합니다. 자동화로 모든 일을 해결합니다."},
+  {"source":"합성 테스트","source_url":"https://example.org/post/unknown","original_text":"카페를 운영하는데 결제 정산이 늦어 비용이 발생했습니다. 날짜와 작성자는 아직 확인하지 않았습니다."},
+  {"source":"당근 카페","source_url":"https://cafe.daangn.com/x6idgz/posts/synthetic-example","original_text":"합성 데이터이며 실제 당근 게시글이 아닙니다. 자동 전송 차단 확인용입니다."}
+]

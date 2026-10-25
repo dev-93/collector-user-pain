@@ -1,7 +1,7 @@
 {
   "name": "problem-radar",
   "version": "0.1.0",
-  "description": "한국 사용자 문제 자동 수집·분석 시스템 — 반복되는 불평에서 사업 기회를 찾는다",
+  "description": "원문 근거와 고객 손실을 검토하는 문제 조사 보조 도구",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -13,7 +13,11 @@
     "bot": "node --env-file=.env src/services/telegram-bot.js",
     "setup:notion": "node --env-file=.env scripts/setup-notion.js",
     "setup:validation": "node --env-file=.env scripts/setup-validation-db.js",
-    "dev": "node --env-file=.env src/index.js"
+    "dev": "node --env-file=.env src/index.js",
+    "test": "node --test tests/*.test.js",
+    "review": "node scripts/review-collection.js",
+    "compare": "node scripts/compare-pipeline.js",
+    "daily": "node scripts/daily.js"
   },
   "engines": {
     "node": ">=22.0.0"

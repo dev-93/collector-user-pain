@@ -9,9 +9,14 @@
 
 import { Client } from '@notionhq/client';
 import { VALIDATION_PLAYBOOKS } from '../config/validation-playbooks.js';
+import { validationEligibility } from '../utils/candidate-policy.js';
 
 class ValidationService {
-  constructor() {
+  constructor({ client, validationDbId, problemDbId } = {}) {
+    if (client && validationDbId) {
+      Object.assign(this, { client, validationDbId, problemDbId });
+      return;
+    }
     if (!process.env.NOTION_TOKEN) {
       throw new Error('NOTION_TOKEN이 .env에 없습니다.');
     }
@@ -21,7 +26,7 @@ class ValidationService {
         'node scripts/setup-validation-db.js 를 먼저 실행하세요.'
       );
     }
-    this.client = new Client({ auth: process.env.NOTION_TOKEN });
+    this.client = new Client({ auth: process.env.NOTION_TOKEN, logger: () => {} });
     this.validationDbId = process.env.NOTION_VALIDATION_DB_ID;
     this.problemDbId = process.env.NOTION_PROBLEM_DB_ID;
   }
@@ -32,7 +37,10 @@ class ValidationService {
    * @param {string} playbookId - validation-playbooks.js의 id
    * @returns {Object} 생성된 Notion 검증 페이지
    */
-  async createValidationExperiment(problem, playbookId = 'community-smoke-test') {
+  async createValidationExperiment(problem, playbookId = 'the-mom-test', { approved = false } = {}) {
+    if (!approved) throw new Error('검증 실험실 승격에는 사용자 결정이 필요합니다.');
+    if (!problem.id || !validationEligibility(problem)) throw new Error('사람이 확인한 원문 증거·접근 조건이 부족합니다.');
+    if ((await this.getActiveExperiments()).length) throw new Error('동시에 검증 후보는 최대 1개입니다.');
     const playbook = VALIDATION_PLAYBOOKS.find((p) => p.id === playbookId)
       || VALIDATION_PLAYBOOKS[0];
 
@@ -60,9 +68,6 @@ class ValidationService {
             content: `📋 실행 가이드:\n${playbook.actionSteps.join('\n')}\n\n⏱ 예상 소요: ${playbook.duration}`,
           },
         }],
-      },
-      '시작일': {
-        date: { start: new Date().toISOString().split('T')[0] },
       },
       // 검증 진입 이유: 왜 수집함에서 검증 실험실로 올라왔는가
       '검증 진입 이유': {
@@ -151,7 +156,7 @@ class ValidationService {
     });
     const stats = { total: 0, go: 0, pivot: 0, kill: 0, inProgress: 0 };
     for (const page of response.results) {
-      const status = page.properties.status?.status?.name || '';
+      const status = page.properties['상태']?.status?.name || '';
       stats.total++;
       if (status.includes('Go')) stats.go++;
       else if (status.includes('Pivot')) stats.pivot++;
@@ -167,36 +172,8 @@ class ValidationService {
    * @param {number} limit - 최대 생성 건수
    */
   async autoCreateFromProblems(problems, limit = 5) {
-    const topProblems = problems
-      .filter((p) => p.score >= 70 && p.status === '수집됨')
-      .slice(0, limit);
-
-    if (topProblems.length === 0) {
-      console.log('  📭 검증 대상 문제가 없습니다. (score 70+ 문제를 먼저 수집하세요)');
-      return [];
-    }
-
-    console.log(`\n🧪 검증 가설 자동 생성: ${topProblems.length}건`);
-    const created = [];
-
-    for (const problem of topProblems) {
-      const playbookId = this.recommendPlaybook(problem);
-      const playbook = VALIDATION_PLAYBOOKS.find((p) => p.id === playbookId);
-
-      try {
-        const page = await this.createValidationExperiment(problem, playbookId);
-        console.log(`  ✅ [${problem.score}점] ${problem.problem_summary}`);
-        console.log(`     추천 플레이북: ${playbook?.name}`);
-        console.log(`     Notion: ${page.url}`);
-        created.push(page);
-      } catch (err) {
-        console.error(`  ❌ 생성 실패: ${problem.problem_summary}`, err.message);
-      }
-
-      await sleep(300);
-    }
-
-    return created;
+    console.log('⏸️ 자동 승격은 비활성화되었습니다. 사용자 원문 판독·선택 후 1개만 승격하세요.');
+    return [];
   }
 }
 
